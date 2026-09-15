@@ -1,0 +1,26 @@
+[station]
+provider = "USGS"
+
+[download]
+profile = "core"
+include_catalog_only = false
+include_field_measurements = true
+
+[analysis]
+# A Water Year is Oct 1 through Sep 30 and is named for its ending year.
+hydrograph_period = "recent_10_water_years"
+hydrograph_anchor = "water_year_start"
+stage_discharge_pairing = "all_daily_pairs_plus_field_measurements"
+stage_discharge_validation = "field_measurements_against_published_series"
+
+[validation]
+# Optional local ground-truth file. The adapter and schema will be defined
+# after the first station-discovery review.
+field_measurements_path = ""
+match_tolerance_hours = 24
+
+[plot]
+language = "en"
+palette = "okabe_ito"
+preview_format = "svg"
+archive_format = "svg"

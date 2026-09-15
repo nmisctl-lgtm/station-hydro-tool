@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Station Hydro Tool</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <p class="eyebrow">Station Hydro Tool · Phase 1</p>
+        <h1>Explore one monitoring station</h1>
+        <p class="lede">
+          Enter a USGS station ID to discover its metadata, available data,
+          coverage, watershed boundary, quality summary, and figures.
+        </p>
+        <form id="station-form" class="station-form">
+          <label for="station-id">USGS station ID</label>
+          <div class="form-row">
+            <input id="station-id" name="station-id" value="09342500" inputmode="numeric" required />
+            <button type="submit">Load station</button>
+            <button type="button" id="refresh-button" class="secondary">Refresh data</button>
+          </div>
+        </form>
+        <p id="status" class="status" role="status"></p>
+      </header>
+
+      <section id="station-content" hidden>
+        <div id="station-heading" class="station-heading"></div>
+        <section id="summary-cards" class="cards"></section>
+
+        <div class="two-column">
+          <section class="panel">
+            <h2>Location details</h2>
+            <div id="location-details" class="detail-grid"></div>
+          </section>
+          <section class="panel">
+            <h2>Data files and watershed</h2>
+            <div id="observation-files"></div>
+            <div id="basin-details"></div>
+          </section>
+        </div>
+
+        <section class="panel">
+          <h2>Available data and coverage</h2>
+          <p class="muted">The inventory is provider-declared. Download status is shown when a local package exists.</p>
+          <div class="table-wrap"><table id="availability-table"></table></div>
+        </section>
+
+        <section class="panel">
+          <h2>Analysis figures</h2>
+          <div id="figures" class="figure-grid"></div>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,18 @@
+.venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+.matplotlib-cache/
+.uv-cache/
+.DS_Store
+.env
+dist/
+build/
+
+# Local station data and generated artifacts
+data/
+outputs/
+
+# HyRiver and HTTP caches
+.cache/
+cache/
