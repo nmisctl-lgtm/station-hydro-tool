@@ -1,5 +1,8 @@
 from datetime import date
 
+import requests
+
+from station_hydro import discovery
 from station_hydro.discovery import build_available_data, parse_rdb_text
 
 
@@ -48,3 +51,32 @@ USGS\t09342500\tpk\t\t1911-07-02\t2025-05-14\n"""
     assert records[0].frequency == "annual_peak"
     assert records[0].parameter_code is None
     assert records[0].notes is not None
+
+
+def test_get_raw_retries_transient_connection_drop(tmp_path, monkeypatch) -> None:
+    provider = discovery.USGSProvider(tmp_path, timeout_seconds=1)
+    calls = []
+
+    def fake_get(*args, **kwargs):
+        calls.append((args, kwargs))
+        if len(calls) == 1:
+            raise requests.ConnectionError("remote end closed connection")
+        response = requests.Response()
+        response.status_code = 200
+        response.url = "https://example.test/data"
+        response._content = b"ok"
+        response.encoding = "utf-8"
+        return response
+
+    monkeypatch.setattr(provider.session, "get", fake_get)
+    monkeypatch.setattr(discovery.time, "sleep", lambda _seconds: None)
+
+    text, artifact = provider._get_raw(
+        "https://example.test/data",
+        {"station": "09342500"},
+        tmp_path / "raw" / "data.txt",
+    )
+
+    assert text == "ok"
+    assert artifact["status_code"] == 200
+    assert len(calls) == 2

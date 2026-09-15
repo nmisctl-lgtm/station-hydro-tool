@@ -328,7 +328,7 @@ class USGSProvider:
                     "sha256": checksum,
                     "from_cache": False,
                 }
-            except requests.HTTPError as exc:
+            except requests.RequestException as exc:
                 status = exc.response.status_code if exc.response is not None else None
                 if (
                     status == 429
@@ -347,7 +347,16 @@ class USGSProvider:
                         "from_cache": True,
                         "rate_limit_fallback": True,
                     }
-                if status not in {429, 500, 502, 503, 504} or attempt == 3:
+                retryable_status = status in {429, 500, 502, 503, 504}
+                retryable_transport = isinstance(
+                    exc,
+                    (
+                        requests.ConnectionError,
+                        requests.Timeout,
+                        requests.exceptions.ChunkedEncodingError,
+                    ),
+                )
+                if not (retryable_status or retryable_transport) or attempt == 3:
                     raise
                 retry_after = exc.response.headers.get("Retry-After") if exc.response else None
                 try:
