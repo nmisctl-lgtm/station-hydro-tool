@@ -17,7 +17,7 @@ Python 3.12 or 3.13 is required. `uv` is recommended because `uv.lock` records
 the tested dependency resolution; ordinary `pip` remains supported.
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/nmisctl-lgtm/station-hydro-tool.git
 cd station-hydro-tool
 uv sync --extra test
 uv run pytest
