@@ -41,10 +41,12 @@ python3.12 -m venv .venv
 .venv/bin/station-hydro serve
 ```
 
-For continuous/unit observations, which can be much larger than daily data:
+The default station workflow includes available continuous stage/discharge
+observations because they support the hydrograph and stage-discharge views. If
+you are doing a metadata-only or daily-only pass, skip that retrieval:
 
 ```bash
-uv run station-hydro run 09342500 --with-continuous
+uv run station-hydro run 09342500 --skip-continuous
 ```
 
 ## What the station ID workflow returns
@@ -61,6 +63,10 @@ uv run station-hydro run 09342500 --with-continuous
 - English PNG/SVG figures for coverage, completeness, normalized monthly
   discharge, the recent hydrograph, stage-discharge evidence, and supporting
   station hydrology summaries.
+
+The coverage and completeness figures focus on the core/supporting analysis
+series; the Available Data table and JSON response retain the full provider
+inventory, including catalog-only categories.
 
 Water Year is used only as a derived analysis grouping: October 1 through
 September 30, named for the ending calendar year. Provider catalog entries
@@ -81,9 +87,10 @@ station-hydro serve                            # REST API and browser UI
 ```
 
 Every station command accepts `--refresh`, `--data-dir`, and `--output-dir`.
-The default profile is deliberately metadata-first for continuous data; this
-keeps the routine station inspection practical while preserving the full
-Available Data inventory.
+The default profile downloads the core daily and continuous hydrology series,
+field measurements, peaks, ratings, watershed boundary, quality tables, and
+figures. Other provider categories remain visible in the complete inventory
+and are not silently treated as core observations.
 
 ## Application boundary
 
@@ -94,7 +101,7 @@ the CLI, browser UI, and future basin-platform plugin. The API is served by
 ```text
 GET  /api/v1/health
 GET  /api/v1/stations/{station_id}
-POST /api/v1/stations/{station_id}/run?refresh=false&with_continuous=false
+POST /api/v1/stations/{station_id}/run?refresh=false&with_continuous=true
 GET  /api/v1/stations/{station_id}/basin
 GET  /api/v1/stations/{station_id}/figures/{file_name}
 GET  /station/USGS/{station_id}

@@ -221,7 +221,11 @@ def summarize_annual_hydrology(
             return "wet"
         return "normal"
 
-    result["hydrologic_year_class"] = result["mean_discharge_cfs"].map(classify)
+    result["hydrologic_year_class"] = pd.NA
+    complete_mask = result["is_complete"].fillna(False) & result["mean_discharge_cfs"].notna()
+    result.loc[complete_mask, "hydrologic_year_class"] = result.loc[
+        complete_mask, "mean_discharge_cfs"
+    ].map(classify)
     return result
 
 

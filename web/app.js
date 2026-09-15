@@ -94,9 +94,16 @@ async function loadStation({ run = true, refresh = false } = {}) {
   refreshButton.disabled = true;
   try {
     const endpoint = run
-      ? `/api/v1/stations/${encodeURIComponent(stationId)}/run?refresh=${refresh}`
+      ? `/api/v1/stations/${encodeURIComponent(stationId)}/run?refresh=${refresh}&with_continuous=true`
       : `/api/v1/stations/${encodeURIComponent(stationId)}`;
-    const response = await fetch(endpoint, { method: run ? "POST" : "GET" });
+    let response = await fetch(endpoint, { method: run ? "POST" : "GET" });
+    if (!response.ok && !run && response.status === 404) {
+      setStatus("No local package found; building it from public USGS data…");
+      response = await fetch(
+        `/api/v1/stations/${encodeURIComponent(stationId)}/run?refresh=false&with_continuous=true`,
+        { method: "POST" },
+      );
+    }
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || "Station request failed");
     renderSummary(payload);

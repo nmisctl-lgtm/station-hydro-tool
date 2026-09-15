@@ -74,6 +74,18 @@ def test_annual_and_monthly_statistics_use_water_years() -> None:
     assert monthly["normalized_mean_discharge"].notna().all()
 
 
+def test_incomplete_water_year_is_not_classified() -> None:
+    daily = synthetic_daily()
+    dates = pd.to_datetime(daily["observed_date_local"])
+    daily = daily.loc[~((dates >= "2010-10-01") & (dates < "2011-01-01"))]
+
+    annual = summarize_annual_hydrology(daily)
+
+    incomplete = annual.loc[annual["water_year"] == 2011].iloc[0]
+    assert not incomplete["is_complete"]
+    assert pd.isna(incomplete["hydrologic_year_class"])
+
+
 def test_high_flow_events_and_frequency_outputs_are_explicit() -> None:
     daily = synthetic_daily()
     daily.loc[100:102, "value"] = 500

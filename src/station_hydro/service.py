@@ -26,7 +26,7 @@ class StationRunOptions:
     data_dir: Path = Path("data/stations")
     output_dir: Path = Path("outputs")
     refresh: bool = False
-    with_continuous: bool = False
+    with_continuous: bool = True
     profile: str = "core"
 
     @property

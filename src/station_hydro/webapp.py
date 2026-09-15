@@ -81,7 +81,7 @@ def create_app(
     def station_run(
         station_id: str,
         refresh: bool = Query(False),
-        with_continuous: bool = Query(False),
+        with_continuous: bool = Query(True),
     ) -> dict[str, Any]:
         try:
             options = StationRunOptions(

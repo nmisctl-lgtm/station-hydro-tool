@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .discovery import USGSProvider, write_availability_summary
 from .catalog import build_station_directory, build_station_directory_from_local
-from .basin import download_basin_context, download_contributing_watershed, download_flow_network
+from .basin import download_contributing_watershed
 from .field_measurements import fetch_field_measurements
 from .retrieval import (
     DownloadPlanItem,
@@ -153,13 +153,12 @@ def _run_pipeline(args: argparse.Namespace, request: StationRequest) -> dict[str
             args.data_dir,
             provider_drainage_area_sq_mi=metadata.get("drainage_area_sq_mi"),
         )
-    flow_network_path = station_root / "spatial" / "flow_network.geojson"
-    if request.refresh or not flow_network_path.exists():
-        flow_network_path = download_flow_network(request, args.data_dir)
-    basin_context = download_basin_context(args.data_dir)
+    # A single-station run downloads only the station's own contributing
+    # watershed. Regional HUC4 context is a separate basin-view concern.
+    flow_network_path = None
     quality_path = write_station_quality(station_root, args.output_dir)
     hydrology_path = write_station_hydrology(station_root)
-    generate_station_figures(station_root, args.output_dir, basin_context=basin_context)
+    generate_station_figures(station_root, args.output_dir)
     return {
         "station_root": station_root,
         "plan": plan_path,
@@ -188,8 +187,15 @@ def build_parser() -> argparse.ArgumentParser:
         command_parser.add_argument(
             "--with-continuous",
             action="store_true",
-            help="opt in to UV/IV downloads; core mode is metadata-first",
+            help="download continuous stage/discharge observations",
         )
+        command_parser.add_argument(
+            "--skip-continuous",
+            action="store_false",
+            dest="with_continuous",
+            help="skip continuous stage/discharge observations",
+        )
+        command_parser.set_defaults(with_continuous=True)
         command_parser.add_argument("--data-dir", type=Path, default=Path("data/stations"))
         command_parser.add_argument("--output-dir", type=Path, default=Path("outputs"))
 
@@ -382,9 +388,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "plot":
         station_root = _station_root(args.data_dir, request)
-        basin_context = download_basin_context(args.data_dir)
         figures = generate_station_figures(
-            station_root, args.output_dir, basin_context=basin_context
+            station_root, args.output_dir
         )
         print(f"Figures: {output_station_root(args.output_dir, station_root) / 'figures'}")
         print(f"Generated: {', '.join(figures)}")

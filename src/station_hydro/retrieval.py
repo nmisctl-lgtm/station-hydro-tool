@@ -88,9 +88,12 @@ def build_download_plan(
         elif data_type in {"uv", "iv"} and parameter == "00065":
             if include_continuous:
                 action = "download"
-                start = max(record.declared_start or unit_window.start, unit_window.start)
-                end = min(record.declared_end or unit_window.end, unit_window.end)
-                reason = "recent Water Year window for daily stage aggregation"
+                start = record.declared_start or unit_window.start
+                end = record.declared_end or unit_window.end
+                reason = (
+                    "full declared continuous stage history; plots select the "
+                    "recent Water Year window"
+                )
             else:
                 action = "defer"
                 start, end = record.declared_start, record.declared_end

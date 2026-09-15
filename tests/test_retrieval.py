@@ -209,6 +209,8 @@ USGS\t09342500\tuv\t00060\t\t3\t1987-05-22\t2026-08-28\t14343
     assert opt_in_discharge.action == "download"
     opt_in_stage = next(item for item in opt_in_plan if item.parameter_code == "00065")
     assert opt_in_stage.action == "download"
+    assert opt_in_stage.start == date(2020, 9, 17)
+    assert opt_in_stage.end == date(2026, 8, 28)
 
 
 def test_download_plan_selects_annual_peak_for_flood_frequency() -> None:
