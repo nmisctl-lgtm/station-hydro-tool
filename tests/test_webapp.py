@@ -41,6 +41,9 @@ def test_webapp_serves_dynamic_overview_and_station_shell(tmp_path) -> None:
     overview = client.get("/")
     assert overview.status_code == 200
     assert "Basin Overview" in overview.text
+    assert "app.js?v=20260916-2" in overview.text
+    assert overview.headers["cache-control"] == "no-store, max-age=0"
+    assert client.get("/static/app.js?v=20260916-2").headers["cache-control"] == "no-store, max-age=0"
     station = client.get("/station/USGS/09342500")
     assert station.status_code == 200
     assert "Hydrograph" in station.text

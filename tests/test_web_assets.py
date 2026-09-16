@@ -34,10 +34,10 @@ def test_station_shell_uses_explicit_static_assets_without_a_basin_release() -> 
     html = STATION_HTML.read_text(encoding="utf-8")
     source = STATION_JS.read_text(encoding="utf-8")
 
-    assert 'href="/static/styles.css"' in html
+    assert 'href="/static/styles.css?v=' in html
     assert 'href="/static/vendor/maplibre-gl.css"' in html
-    assert 'href="/static/station.css"' in html
-    assert 'src="/static/station.js"' in html
+    assert 'href="/static/station.css?v=' in html
+    assert 'src="/static/station.js?v=' in html
     assert "/gis/hydrography/basin_boundary.geojson" not in source
     assert "MAP_REFERENCE_URLS" not in source
     assert "REGIONAL_CITIES" not in source

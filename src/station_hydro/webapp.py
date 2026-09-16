@@ -75,6 +75,14 @@ def create_app(
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def no_cache_local_assets(request: Request, call_next: Any) -> Any:
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith(("/station/", "/static/")):
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+
     app.mount("/static", StaticFiles(directory=WEB_ROOT), name="static")
     package_reader = StationPackageReader(data_dir)
     if overview_dir is None:
