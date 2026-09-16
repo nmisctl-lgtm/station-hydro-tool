@@ -32,6 +32,7 @@ from .presentation import (
 from .service import (
     StationRunOptions,
     load_station_snapshot,
+    refresh_station_daily,
     run_station,
 )
 
@@ -110,20 +111,24 @@ def create_app(
     def overview_parameters(request: Request) -> dict[str, list[str]]:
         return parse_qs(request.url.query, keep_blank_values=True)
 
-    def cached_station_has_inventory(location_key: str) -> bool:
+    def station_package_state(location_key: str) -> tuple[Path | None, dict[str, Any] | None]:
         try:
             request = StationRequest(location_key.split(":", maxsplit=1)[-1])
             root = resolve_station_root(data_dir, request)
         except (ValueError, RuntimeError):
-            return False
+            return None, None
         metadata_path = root / "metadata" / "station_metadata.json"
         if not metadata_path.is_file():
-            return False
+            return root, None
         try:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
-            return False
-        return bool(metadata.get("available_data"))
+            return root, None
+        return root, metadata if isinstance(metadata, dict) else None
+
+    def cached_station_has_inventory(location_key: str) -> bool:
+        _, metadata = station_package_state(location_key)
+        return bool(metadata and metadata.get("available_data"))
 
     def ensure_daily_update(location_key: str) -> None:
         """Check the daily source once per day when a station is viewed.
@@ -135,14 +140,12 @@ def create_app(
 
         if not location_key.startswith("USGS:"):
             return
-        if not cached_station_has_inventory(location_key):
+        root, metadata = station_package_state(location_key)
+        if root is None:
+            return
+        if metadata is not None and not metadata.get("available_data"):
             return
         station_id = location_key.split(":", maxsplit=1)[1]
-        try:
-            request = StationRequest(station_id)
-            root = resolve_station_root(data_dir, request)
-        except (ValueError, RuntimeError):
-            return
         marker_path = root / "metadata" / "daily_update_state.json"
         now = datetime.now(timezone.utc)
         try:
@@ -173,14 +176,17 @@ def create_app(
                 "status": "updated",
             }
             try:
-                result = run_station(
-                    StationRunOptions(
-                        station_id=station_id,
-                        data_dir=data_dir,
-                        output_dir=output_dir,
-                        refresh=True,
-                        with_continuous=False,
-                    )
+                options = StationRunOptions(
+                    station_id=station_id,
+                    data_dir=data_dir,
+                    output_dir=output_dir,
+                    refresh=metadata is not None,
+                    with_continuous=False,
+                )
+                result = (
+                    refresh_station_daily(options)
+                    if metadata is not None
+                    else run_station(options)
                 )
                 daily_path = result.get("daily")
                 state["daily_path"] = str(daily_path) if daily_path else None

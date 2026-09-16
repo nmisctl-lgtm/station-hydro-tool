@@ -58,6 +58,55 @@ def run_station(options: StationRunOptions) -> dict[str, Path | None]:
     return _run_pipeline(args, request)
 
 
+def refresh_station_daily(options: StationRunOptions) -> dict[str, Path | None]:
+    """Refresh only the USGS daily-discharge path for an existing package.
+
+    Metadata discovery is refreshed so the provider-declared end date moves
+    forward, but continuous observations, ratings, field measurements, and
+    watershed downloads are intentionally outside this view-triggered seam.
+    """
+
+    from .cli import _read_station_timezone, _station_root, _write_download_plan
+    from .discovery import USGSProvider, write_availability_summary
+    from .quality import write_station_quality
+    from .hydrology import write_station_hydrology
+    from .retrieval import available_data_from_json, build_download_plan, fetch_daily_discharge
+
+    request = options.request
+    station_root = _station_root(options.data_dir, request)
+    inventory_path = station_root / "metadata" / "available_data.json"
+    if request.refresh or not inventory_path.exists():
+        USGSProvider(options.data_dir, output_root=options.output_dir).discover(request)
+    records = available_data_from_json(inventory_path)
+    daily_record = next(
+        (
+            record
+            for record in records
+            if record.provider_data_type == "dv" and record.parameter_code == "00060"
+        ),
+        None,
+    )
+    if daily_record is None:
+        raise ValueError(f"USGS station {request.station_id} has no daily discharge series")
+    plan = build_download_plan(records, include_continuous=False)
+    plan_path = station_root / "metadata" / "download_plan.json"
+    _write_download_plan(plan_path, request, plan)
+    write_availability_summary(station_root, records, options.output_dir, plan)
+    daily_path = fetch_daily_discharge(
+        request,
+        daily_record,
+        options.data_dir,
+        station_timezone=_read_station_timezone(station_root),
+    )
+    return {
+        "station_root": station_root,
+        "plan": plan_path,
+        "daily": daily_path,
+        "quality": write_station_quality(station_root, options.output_dir),
+        "hydrology": write_station_hydrology(station_root),
+    }
+
+
 def _read_json(path: Path, default: Any) -> Any:
     if not path.exists():
         return default

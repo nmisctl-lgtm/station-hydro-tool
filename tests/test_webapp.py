@@ -272,7 +272,7 @@ def test_viewing_a_station_refreshes_daily_once_per_day(tmp_path, monkeypatch) -
         calls.append(options)
         return {"daily": data_dir / "USGS_09342500" / "raw" / "dv_00060_full.rdb"}
 
-    monkeypatch.setattr("station_hydro.webapp.run_station", fake_run)
+    monkeypatch.setattr("station_hydro.webapp.refresh_station_daily", fake_run)
     client = TestClient(create_app(data_dir=data_dir, output_dir=output_dir))
 
     assert client.get("/api/v1/stations/USGS:09342500/analysis").status_code == 200
