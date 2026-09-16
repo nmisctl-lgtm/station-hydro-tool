@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Station analysis · San Juan Basin Digital Twin</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/vendor/maplibre-gl.css" />
+    <link rel="stylesheet" href="/static/station.css" />
+    <script type="module" src="/static/station.js"></script>
+  </head>
+  <body class="station-page">
+    <header class="app-header station-header">
+      <div class="station-header-copy">
+        <p class="eyebrow">LOCAL · READ ONLY · STATION ANALYSIS</p>
+        <h1 id="station-title">Opening station…</h1>
+        <p id="station-subtitle" class="muted">Loading source-backed metadata and station-package hydrology.</p>
+        <div id="station-status-chips" class="status-chips" aria-live="polite"></div>
+      </div>
+      <div class="station-header-actions">
+        <a class="header-link" href="/">← Basin control console</a>
+        <div id="station-external-links" class="external-links"></div>
+      </div>
+    </header>
+
+    <main class="station-main">
+      <p id="station-notice" class="notice" hidden></p>
+
+      <nav class="station-toc" aria-label="Station page sections">
+        <a href="#hydrologic-context">Hydrologic context</a>
+        <a href="#overview">Overview</a>
+        <a href="#data">Data</a>
+        <a href="#hydrograph-section">Hydrograph</a>
+        <a href="#flow-regime">Flow regime</a>
+        <a href="#water-availability">Water availability</a>
+        <a href="#ffa">FFA</a>
+        <a href="#stage-discharge-section">Stage–discharge</a>
+        <a href="#quality">QA/QC</a>
+        <a href="#provenance">Sources</a>
+      </nav>
+
+      <section id="hydrologic-context" class="station-card station-intro-card" aria-labelledby="hydrologic-context-heading">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="section-kicker">INTERPRETATION CONTEXT</p>
+            <h2 id="hydrologic-context-heading">Hydrologic character and data confidence</h2>
+          </div>
+          <span id="hydrologic-confidence" class="pill">Loading</span>
+        </div>
+        <p id="hydrologic-intro" class="station-intro-copy">Loading station hydrologic character and evidence limits.</p>
+        <p id="hydrologic-confidence-note" class="station-intro-boundary">The evidence note will be populated from the station package.</p>
+      </section>
+
+      <section id="overview" class="station-hero-grid" aria-label="Station overview">
+        <article class="station-card quick-summary-card">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="section-kicker">QUICK SUMMARY</p>
+              <h2>Station at a glance</h2>
+            </div>
+            <span id="summary-status" class="pill">Loading</span>
+          </div>
+          <div id="quick-summary" class="summary-metric-grid"></div>
+          <p id="quick-summary-note" class="card-note">Metrics are calculated from the selected station package and release-local series.</p>
+        </article>
+
+        <article class="station-card metadata-card">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="section-kicker">IDENTITY</p>
+              <h2>Station metadata</h2>
+            </div>
+          </div>
+          <dl id="station-metadata" class="metadata-list"></dl>
+        </article>
+      </section>
+
+      <section class="station-card context-card" aria-labelledby="context-heading">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">SPATIAL CONTEXT</p>
+            <h2 id="context-heading">Basin and station context</h2>
+            <p>Regional and local views are shown together so the station's position, contributing watershed, river network, and available context can be checked at the same time.</p>
+          </div>
+        </div>
+        <div class="context-layout">
+          <div class="context-map-grid">
+            <article class="map-panel">
+              <div class="map-panel-heading"><div><h3>Local station context</h3><p>Downloaded watershed boundary and other station packages stored on this computer.</p></div><span class="map-badge">Local cache</span></div>
+              <div id="regional-map" class="station-map" aria-label="Interactive local station and watershed context map"></div>
+              <div class="map-legend" aria-label="Regional map legend">
+                <span class="map-legend-item"><i class="legend-line control-boundary"></i>Station contributing watershed</span>
+                <span class="map-legend-item"><i class="legend-dot station-dot"></i>Locally cached stations</span>
+              </div>
+              <small id="regional-map-layer-status" class="map-layer-status">Local station context loading…</small>
+              <p id="map-note" class="chart-note map-note">Local station context loading…</p>
+            </article>
+            <article class="map-panel">
+              <div class="map-panel-heading"><div><h3>Local watershed</h3><p>Station control area, flow network, and nearby locally cached stations.</p></div><span class="map-badge">Local</span></div>
+              <div id="local-map" class="station-map" aria-label="Interactive local contributing watershed map"></div>
+              <div class="map-legend" aria-label="Local map legend">
+                <span class="map-legend-item"><i class="legend-fill watershed-fill"></i>Contributing watershed</span>
+                <span class="map-legend-item"><i class="legend-line flowline-line"></i>NHDPlus flow network</span>
+                <span class="map-legend-item"><i class="legend-dot local-station-dot"></i>Locally cached stations</span>
+              </div>
+              <small id="local-map-layer-status" class="map-layer-status">Local reference layers loading…</small>
+              <p id="local-map-note" class="chart-note map-note">Local map loading…</p>
+            </article>
+          </div>
+          <aside class="context-side-panel">
+            <h3>Location details</h3>
+            <div id="location-facts" class="fact-list"></div>
+            <div class="link-stack" id="context-links"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="data" class="station-card" aria-labelledby="data-heading">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">DATA INVENTORY</p>
+            <h2 id="data-heading">Available data and coverage</h2>
+            <p>Provider-declared coverage, local archive status, and chart-ready numeric coverage are kept distinct.</p>
+          </div>
+          <div class="section-heading-actions">
+            <span id="data-status" class="pill">Loading</span>
+            <div class="inline-controls data-controls">
+              <label>View
+                <select id="coverage-filter">
+                  <option value="core" selected>Core analytical series</option>
+                  <option value="local">Downloaded or available locally</option>
+                  <option value="all">All provider inventory</option>
+                </select>
+              </label>
+            </div>
+            <button id="download-coverage" type="button" class="secondary-button">Download inventory CSV</button>
+          </div>
+        </div>
+        <p id="coverage-filter-note" class="chart-note coverage-filter-note"></p>
+        <div class="table-scroll data-table-scroll">
+          <table>
+            <thead><tr><th>Variable</th><th>Frequency</th><th>Provider coverage</th><th>Local status</th><th>Local records</th></tr></thead>
+            <tbody id="coverage-rows"></tbody>
+          </table>
+        </div>
+        <div id="coverage-timeline" class="coverage-timeline"></div>
+      </section>
+
+      <section id="hydrograph-section" class="station-card" aria-labelledby="hydrograph-heading">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">TIME SERIES</p>
+            <h2 id="hydrograph-heading">Hydrograph</h2>
+            <p>Daily discharge and gage height share one time axis. Drag to zoom, double-click to reset, and use the controls to show or hide variables.</p>
+          </div>
+          <span id="hydrograph-status" class="pill">Waiting</span>
+        </div>
+        <div class="control-bar hydrograph-controls">
+          <label>Start <input id="hydrograph-start" type="date" /></label>
+          <label>End <input id="hydrograph-end" type="date" /></label>
+          <label>Window
+            <select id="hydrograph-window">
+              <option value="recent10">Recent 10 years</option>
+              <option value="full">Full available period</option>
+              <option value="custom">Custom range</option>
+            </select>
+          </label>
+          <label>Stage series <select id="stage-series"></select></label>
+          <label>Discharge series <select id="discharge-series"></select></label>
+          <label>Moving average
+            <select id="moving-average"><option value="0">None</option><option value="7">7 plotted days</option><option value="30">30 plotted days</option></select>
+          </label>
+          <label class="toggle-label"><input id="log-scale" type="checkbox" /> Log scale</label>
+          <button id="reset-chart-zoom" type="button" class="secondary-button">Reset zoom</button>
+        </div>
+        <div id="hydrograph-variable-toggles" class="variable-toggles" aria-label="Hydrograph variable visibility"></div>
+        <p id="hydrograph-note" class="chart-note"></p>
+        <div id="hydrograph" class="hydrograph" aria-live="polite"></div>
+        <div class="chart-actions"><button id="download-hydrograph" type="button" class="secondary-button">Download plotted daily data</button></div>
+        <div id="additional-variable-plots"></div>
+      </section>
+
+      <section id="flow-regime" class="station-card" aria-labelledby="flow-regime-heading">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">FLOW REGIME</p>
+            <h2 id="flow-regime-heading">Daily pattern, duration, and annual statistics</h2>
+            <p>These views summarize daily flow distribution, Water-Year behavior, and baseflow without using the catalog-only Water Year series.</p>
+          </div>
+        </div>
+
+        <div class="analysis-subsection">
+          <div class="subsection-heading">
+            <div><h3>Water-Year daily flow pattern</h3><p>Heatmap rows are calculated from daily discharge; the comparison chart shows the current Water Year against selected years and the full-period reference.</p></div>
+          </div>
+          <div class="water-year-layout">
+            <article class="embedded-panel water-year-compare-panel"><div id="water-year-comparison" class="wide-chart"></div></article>
+            <article class="embedded-panel water-year-heatmap-panel"><div id="water-year-controls" class="inline-controls"></div><div id="water-year-heatmap" class="wide-chart"></div></article>
+          </div>
+        </div>
+
+        <div class="analysis-subsection">
+          <div class="subsection-heading">
+            <div><h3>Flow Duration Curve</h3><p id="fdc-description">Daily discharge equaled or exceeded the plotted value on the indicated percentage of observed days. The table includes 1%, 2%, 3%, five-percent increments, and the upper tail from 96%–99%.</p></div>
+            <div class="inline-controls"><label>Scale <select id="fdc-scale"><option value="log">Log discharge</option><option value="linear">Linear discharge</option></select></label></div>
+          </div>
+          <div class="fdc-layout">
+            <div class="fdc-chart-panel">
+              <div id="flow-duration-chart" class="wide-chart"></div>
+              <div class="chart-actions"><button id="download-fdc" type="button" class="secondary-button">Download FDC CSV</button></div>
+            </div>
+            <div class="fdc-table-panel">
+              <div class="table-scroll compact-table"><table><thead><tr><th>Exceedance probability</th><th>Discharge</th><th>Valid days</th></tr></thead><tbody id="fdc-table"></tbody></table></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="two-column-analysis">
+          <article class="embedded-panel annual-flow-panel">
+            <div class="subsection-heading"><div><h3>Annual Flow Statistics · Daily discharge (ft³/s)</h3><p>One row per Water Year; incomplete years are marked.</p></div></div>
+            <div class="table-scroll compact-table"><table><thead><tr><th>WY</th><th>Complete</th><th>Mean</th><th>Min</th><th>Max</th><th>Peak date</th></tr></thead><tbody id="annual-flow-rows"></tbody></table></div>
+          </article>
+          <article class="embedded-panel">
+            <div class="subsection-heading"><div><h3>Base Flow Statistics</h3><p id="baseflow-description">Baseflow is a screening indicator and remains method-dependent.</p></div></div>
+            <div id="baseflow-summary" class="summary-metric-grid compact-metrics"></div>
+            <div id="baseflow-annual-chart" class="small-chart" aria-label="Annual mean baseflow chart"></div>
+            <div class="table-scroll compact-table"><table><thead><tr><th>WY</th><th>Mean baseflow</th><th>BFI</th><th>Valid days</th></tr></thead><tbody id="baseflow-rows"></tbody></table></div>
+          </article>
+        </div>
+
+      </section>
+
+      <section id="water-availability" class="station-card" aria-labelledby="water-availability-heading">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">WATER RESOURCES</p>
+            <h2 id="water-availability-heading">Water availability and resource analysis</h2>
+            <p>Annual runoff volume, planning baselines, exceedance probabilities, and low-flow screens are shown together. These are empirical planning statistics from the retained station package, not guaranteed supply or allocation rules.</p>
+          </div>
+          <span id="water-availability-status" class="pill">Loading</span>
+        </div>
+        <div id="availability-summary" class="summary-metric-grid availability-summary"></div>
+        <p id="availability-method-note" class="method-note"></p>
+        <div class="availability-panel embedded-panel">
+          <div class="subsection-heading">
+            <div><h3>Annual runoff and water availability</h3><p>Choose either numeric field for each axis. Drag a rectangle across the plot to select both Water Years and corresponding values; the linear regression and 95% CI band update from the selected complete years. Double-click resets the selection.</p></div>
+          </div>
+          <div id="annual-runoff-controls" class="inline-controls availability-controls" aria-label="Annual runoff chart controls"></div>
+          <p id="annual-runoff-note" class="chart-note"></p>
+          <div id="annual-runoff-chart" class="wide-chart" aria-live="polite"></div>
+          <div class="chart-actions"><button id="download-annual-runoff" type="button" class="secondary-button">Download annual runoff CSV</button></div>
+          <div class="subsection-heading monthly-availability-heading">
+            <div><h3>Monthly water availability profile</h3><p>Bars show mean monthly runoff for the Water Years selected above; the blue line is the fixed historical monthly mean.</p></div>
+            <div id="monthly-availability-controls" class="inline-controls"><label>Month runoff of WY<select id="monthly-runoff-year" aria-label="Water Year for monthly runoff line"></select></label><label class="toggle-label"><input id="monthly-runoff-toggle" type="checkbox" checked /> Show mean monthly runoff bars</label></div>
+          </div>
+          <p id="monthly-availability-note" class="chart-note"></p>
+          <div id="monthly-availability-chart" class="wide-chart" aria-live="polite"></div>
+        </div>
+        <div class="water-management-visual-panel embedded-panel">
+          <div class="subsection-heading"><div><h3>Water-management summary</h3><p>Annual runoff by Water Year, annual runoff versus exceedance probability, and empirical multi-duration low-flow screens.</p></div></div>
+          <p id="water-management-visual-note" class="chart-note"></p>
+          <div id="water-management-chart" class="wide-chart" aria-live="polite"></div>
+        </div>
+        <div class="water-resources-grid">
+          <article class="embedded-panel resource-table-panel">
+            <div class="subsection-heading"><div><h3>Planning baselines</h3><p>P50/P75/P90/P95 annual-runoff reference levels.</p></div></div>
+            <div class="table-scroll compact-table"><table><thead><tr><th>Exceedance</th><th>Year type</th><th>Annual runoff</th><th>Mean Q</th></tr></thead><tbody id="water-management-rows"></tbody></table></div>
+          </article>
+          <article class="embedded-panel resource-table-panel">
+            <div class="subsection-heading"><div><h3>Low-flow management screen</h3><p>Empirical annual minimum k-day mean discharge; not a fitted 7Q10/14Q10/30Q10 or ecological-flow standard.</p></div></div>
+            <div class="table-scroll compact-table"><table><thead><tr><th>Duration</th><th>Non-exceedance</th><th>Minimum mean Q</th></tr></thead><tbody id="low-flow-rows"></tbody></table></div>
+          </article>
+        </div>
+        <div class="embedded-panel annual-exceedance-panel">
+          <div class="subsection-heading"><div><h3>Annual runoff exceedance</h3><p>One row per complete Water Year, ranked by annual runoff. Smaller exceedance probabilities correspond to larger annual volumes.</p></div></div>
+          <div class="table-scroll compact-table"><table><thead><tr><th>WY</th><th>Annual runoff</th><th>Mean Q</th><th>Exceedance</th><th>Year class</th></tr></thead><tbody id="annual-exceedance-rows"></tbody></table></div>
+        </div>
+      </section>
+
+      <section id="ffa" class="station-card" aria-labelledby="ffa-heading">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">EXTREME FLOW</p>
+            <h2 id="ffa-heading">Flood Frequency Analysis</h2>
+            <p>Existing station-tool FFA results are visualized here. The page does not recompute the frequency fit.</p>
+          </div>
+          <span id="ffa-status" class="pill">Loading</span>
+        </div>
+        <div class="control-bar compact-controls ffa-controls">
+          <label>Y-axis range <select id="ffa-y-range"><option value="auto">Auto (all plotted values)</option><option value="observed">Observed peaks only</option><option value="full">Include confidence limits</option></select></label>
+          <label>Y-axis scale <select id="ffa-y-scale"><option value="linear">Linear</option><option value="log">Log</option></select></label>
+          <label class="toggle-label"><input id="ffa-show-historical" type="checkbox" /> Show excluded historical peaks</label>
+          <button id="ffa-reset-range" type="button" class="secondary-button">Reset range</button>
+        </div>
+        <div id="ffa-warning" class="method-note" hidden></div>
+        <div class="ffa-layout">
+          <div id="ffa-chart" class="wide-chart"></div>
+          <aside id="ffa-summary" class="ffa-summary"></aside>
+        </div>
+        <div class="table-scroll compact-table"><table><thead><tr><th>Return period</th><th>AEP</th><th>Estimate (ft³/s)</th><th>Lower CI</th><th>Upper CI</th></tr></thead><tbody id="ffa-rows"></tbody></table></div>
+        <div class="chart-actions"><button id="download-ffa" type="button" class="secondary-button">Download FFA CSV</button></div>
+      </section>
+
+      <section id="stage-discharge-section" class="station-card" aria-labelledby="stage-discharge-heading">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">RELATIONSHIP</p>
+            <h2 id="stage-discharge-heading">Stage–discharge relationship</h2>
+            <p>All valid timestamp-aligned high-frequency pairs in the selected interval are used by default. The chart is a diagnostic relationship, not a replacement for the provider rating curve.</p>
+          </div>
+          <span id="stage-discharge-status" class="pill">Waiting</span>
+        </div>
+        <div class="control-bar compact-controls stage-discharge-controls">
+          <div id="stage-discharge-range" class="stage-discharge-range" aria-label="Stage-discharge date range">
+            <div class="range-summary">
+              <label>Start <output id="stage-discharge-start-label">—</output></label>
+              <span class="range-separator">to</span>
+              <label>End <output id="stage-discharge-end-label">—</output></label>
+            </div>
+            <div class="range-slider">
+              <input id="stage-discharge-start-range" type="range" min="0" max="1" value="0" aria-label="Stage-discharge start date" />
+              <input id="stage-discharge-end-range" type="range" min="0" max="1" value="1" aria-label="Stage-discharge end date" />
+            </div>
+            <div class="range-axis"><span id="stage-discharge-min-label">—</span><span id="stage-discharge-max-label">—</span></div>
+          </div>
+          <input id="stage-discharge-start" type="hidden" />
+          <input id="stage-discharge-end" type="hidden" />
+          <span class="control-hint stage-discharge-hint">Field observations stay visible for the full archive; the paired archive follows this range.</span>
+          <button id="stage-discharge-load" type="button" class="secondary-button">Reload paired observations</button>
+        </div>
+        <p id="stage-discharge-note" class="chart-note"></p>
+        <div id="stage-discharge-scatter" class="wide-chart" aria-live="polite"></div>
+        <div class="chart-actions"><button id="download-stage-discharge" type="button" class="secondary-button">Download plotted pairs</button></div>
+      </section>
+
+      <section id="quality" class="station-card" aria-labelledby="quality-heading">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">QUALITY</p>
+            <h2 id="quality-heading">Data quality and review</h2>
+            <p>Official quality codes are retained. Automated findings are review candidates and do not overwrite provider values.</p>
+          </div>
+        </div>
+        <div class="table-scroll compact-table"><table><thead><tr><th>Rule</th><th>State</th><th>Severity</th><th>Review</th><th>Events</th><th>Last detected</th></tr></thead><tbody id="quality-event-rows"></tbody></table></div>
+      </section>
+
+      <section id="provenance" class="station-card provenance-card" aria-labelledby="provenance-heading">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">TRACEABILITY</p>
+            <h2 id="provenance-heading">Data sources and reproducibility</h2>
+            <p>Source and release details remain here for traceability. Chart-specific downloads are placed beside the chart that produced them.</p>
+          </div>
+        </div>
+        <div id="provenance-summary" class="provenance-grid"></div>
+        <p id="reproducibility-note" class="card-note"></p>
+      </section>
+    </main>
+    <script>
+      if (window.location.protocol === "file:") {
+        document.getElementById("station-title").textContent = "Open this station through the local console";
+        document.getElementById("station-subtitle").textContent = "This file is a view template; the dashboard needs the local read-only API and release files.";
+        const fileNotice = document.getElementById("station-notice");
+        fileNotice.textContent = "Start the local console, then open http://127.0.0.1:8765/station.html?station=USGS%3A09342500.";
+        fileNotice.hidden = false;
+      }
+    </script>
+  </body>
+</html>

@@ -71,15 +71,6 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
-def _safe_file_name(value: str) -> str:
-    """Extract a safe file name from an old or new manifest entry."""
-
-    candidate = Path(value).name
-    if candidate in {"", ".", ".."}:
-        raise ValueError(f"Invalid artifact file name: {value!r}")
-    return candidate
-
-
 def load_station_snapshot(
     station_id: str,
     *,
@@ -113,31 +104,6 @@ def load_station_snapshot(
     basin_manifest = _read_json(
         root / "spatial" / "contributing_watershed_manifest.json", {}
     )
-    figure_root = output_station_root(output_dir, root) / "figures"
-    figure_manifest = _read_json(
-        output_station_root(output_dir, root) / "figure_manifest.json", {}
-    )
-
-    figure_urls: dict[str, dict[str, str]] = {}
-    for figure_key, files in figure_manifest.get("figures", {}).items():
-        if not isinstance(files, dict):
-            continue
-        available_files: dict[str, str] = {}
-        for extension in ("png", "svg"):
-            raw_path = files.get(extension)
-            if not raw_path:
-                continue
-            try:
-                file_name = _safe_file_name(str(raw_path))
-            except ValueError:
-                continue
-            if (figure_root / file_name).is_file():
-                available_files[extension] = (
-                    f"/api/v1/stations/{request.station_id}/figures/{file_name}"
-                )
-        if available_files:
-            figure_urls[str(figure_key)] = available_files
-
     coverage = _read_csv(root / "metadata" / "coverage.csv")
     observation_files = []
     observation_root = root / "observations"
@@ -167,7 +133,6 @@ def load_station_snapshot(
             "flow_network_available": (root / "spatial" / "flow_network.geojson").is_file(),
         },
         "observations": observation_files,
-        "figures": figure_urls,
         "provenance": {
             "data_root": str(root),
             "output_root": str(output_station_root(output_dir, root)),

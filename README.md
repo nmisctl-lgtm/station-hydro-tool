@@ -1,77 +1,79 @@
-# Station Hydro Tool
+# San Juan Station Explorer
 
-`station-hydro-tool` is a standalone station package for USGS hydrology. The
-normal input is one station ID, for example `09342500`. The tool discovers the
-station's metadata and provider-declared Available Data, downloads the default
-core observations, retrieves the contributing watershed boundary, runs the
-station quality checks, and generates the analysis figures used by the local
-web application.
+`station-hydro-tool` is a code-only, local-first application for exploring one
+USGS hydrologic station at a time. Enter a station ID such as `09342500` in the
+Overview, and the tool retrieves public data to the computer on which it is
+running, then opens an interactive station page.
 
-The project is intentionally separate from the San Juan Digital Twin. It is a
-small station-level product today and exposes a stable HTTP seam for a future
-whole-basin overview to open a station detail view.
+The Overview is a local catalog: it maps the stations created on that computer.
+It is deliberately not a bundled San Juan data release. This keeps the GitHub
+repository small, reproducible, and free of station observations, watershed
+boundaries, cached API responses, and generated charts.
 
 ## Quick start on a clean machine
 
 Python 3.12 or 3.13 is required. `uv` is recommended because `uv.lock` records
-the tested dependency resolution; ordinary `pip` remains supported.
+the tested dependency resolution.
 
 ```bash
 git clone https://github.com/nmisctl-lgtm/station-hydro-tool.git
 cd station-hydro-tool
 uv sync --extra test
 uv run pytest
-uv run station-hydro run 09342500
 uv run station-hydro serve
 ```
 
-Open <http://127.0.0.1:8765/> and enter a station ID. The first run contacts
-public USGS services and may take a few minutes because it retrieves the full
-declared daily-discharge history and watershed context. Later runs reuse the
-local package; use the **Refresh data** button or `--refresh` to request a new
-provider snapshot.
+Open <http://127.0.0.1:8765/>, enter a USGS station ID, and select **Open
+station**. The first request downloads that station's public metadata and
+observations into the local `data/` directory. Subsequent visits use the local
+package; `--refresh` requests a new provider snapshot.
 
-Without `uv`:
-
-```bash
-python3.12 -m venv .venv
-.venv/bin/python -m pip install -e '.[test]'
-.venv/bin/python -m pytest
-.venv/bin/station-hydro run 09342500
-.venv/bin/station-hydro serve
-```
-
-The default station workflow includes available continuous stage/discharge
-observations because they support the hydrograph and stage-discharge views. If
-you are doing a metadata-only or daily-only pass, skip that retrieval:
+For a terminal-only workflow:
 
 ```bash
+uv run station-hydro run 09342500
 uv run station-hydro run 09342500 --skip-continuous
 ```
 
-## What the station ID workflow returns
+The normal browser path does not generate image files. It reads the local
+station package through JSON endpoints and renders interactive SVG charts in
+the browser. Continuous stage/discharge retrieval is optional in the Overview;
+choose it when stage and stage-discharge analysis are needed.
 
-- station identity, coordinates, drainage area, elevation, HUC, datum, and
-  provider source links;
-- the complete provider-declared Available Data inventory, including coverage
-  windows and whether the default profile downloaded a series;
-- raw provider responses and retrieval manifests;
-- normalized Parquet observations for the selected profile;
-- a local GeoJSON contributing watershed boundary and flow-network context;
-- non-destructive completeness, gap, duplicate, negative-value, quality-code,
-  and robust outlier checks;
-- English PNG/SVG figures for coverage, completeness, normalized monthly
-  discharge, the recent hydrograph, stage-discharge evidence, and supporting
-  station hydrology summaries.
+## What a station package contains locally
 
-The coverage and completeness figures focus on the core/supporting analysis
-series; the Available Data table and JSON response retain the full provider
-inventory, including catalog-only categories.
+- station identity, coordinates, drainage area, elevation, HUC, datum, source
+  links, and the provider-declared Available Data inventory;
+- raw public responses, retrieval manifests, normalized observations, and the
+  contributing watershed boundary;
+- coverage, completeness, QA/QC and derived hydrology summaries; and
+- data served to the browser for the station's hydrograph, flow-duration curve,
+  annual and seasonal summaries, baseflow, stage-discharge, and related views.
 
-Water Year is used only as a derived analysis grouping: October 1 through
-September 30, named for the ending calendar year. Provider catalog entries
-labelled “Water Year” remain inventory metadata and are not treated as a
-separate observation series.
+Water Year is only a derived grouping: October 1 through September 30, named
+for the ending calendar year. Provider catalog entries labelled “Water Year”
+remain metadata; they are not treated as an observation series.
+
+## Browser/API boundary
+
+The no-build frontend lives in `web/`. It contains an Overview and a dynamic
+single-station page:
+
+```text
+GET  /                                  local Overview
+POST /api/v1/stations/{station_id}/run  create or update one local package
+GET  /station/USGS/{station_id}         dynamic station page
+GET  /api/v1/overview                   local catalog summary
+GET  /api/v1/stations                   locally cached station register
+GET  /api/v1/map/stations               local station GeoJSON
+GET  /api/v1/stations/{location_key}/analysis
+GET  /api/v1/stations/{location_key}/hydrology
+GET  /api/v1/stations/{location_key}/local-daily
+```
+
+The station page never reads pre-rendered analysis PNG/SVG files. `web/station.js`
+requests its data from these endpoints and draws the charts directly in the
+browser. The same URL/API seam can later be opened by a full-basin application.
 
 ## Commands
 
@@ -79,79 +81,49 @@ separate observation series.
 station-hydro discover STATION_ID              # metadata and Available Data
 station-hydro fetch STATION_ID                 # default observations
 station-hydro fetch STATION_ID --with-continuous
-station-hydro analyze STATION_ID               # quality and hydrology tables
+station-hydro analyze STATION_ID               # QA/QC and hydrology tables
 station-hydro basin STATION_ID                 # contributing watershed
-station-hydro plot STATION_ID                  # figures and figure manifest
-station-hydro run STATION_ID                   # complete cached workflow
-station-hydro serve                            # REST API and browser UI
+station-hydro run STATION_ID                   # build/update local package
+station-hydro serve                            # local API and browser UI
+station-hydro plot STATION_ID                  # optional offline image export
 ```
 
-Every station command accepts `--refresh`, `--data-dir`, and `--output-dir`.
-The default profile downloads the core daily and continuous hydrology series,
-field measurements, peaks, ratings, watershed boundary, quality tables, and
-figures. Other provider categories remain visible in the complete inventory
-and are not silently treated as core observations.
+`plot` is an explicit archival/export command only; the normal `run` and
+browser workflows do not call it.
 
-## Application boundary
+## Data policy
 
-The service layer in `src/station_hydro/service.py` is the shared contract for
-the CLI, browser UI, and future basin-platform plugin. The API is served by
-`src/station_hydro/webapp.py`:
-
-```text
-GET  /api/v1/health
-GET  /api/v1/stations/{station_id}
-POST /api/v1/stations/{station_id}/run?refresh=false&with_continuous=true
-GET  /api/v1/stations/{station_id}/basin
-GET  /api/v1/stations/{station_id}/figures/{file_name}
-GET  /station/USGS/{station_id}
-```
-
-The future whole-basin overview only needs to pass a station ID and open
-`/station/USGS/{station_id}` or call the JSON endpoint. It does not need to
-know the local data layout or import the analysis modules.
-
-## Data and chart synchronization
-
-The repository follows a reproducible-build model rather than committing a
-large station mirror:
-
-| GitHub contains | Generated locally and ignored by Git |
+| Kept in GitHub | Created locally and ignored by Git |
 | --- | --- |
-| source code, tests, configuration, docs, `pyproject.toml`, `uv.lock` | `data/` raw responses, Parquet observations, GeoJSON boundaries |
-| small test fixtures when needed | `outputs/` PNG/SVG figures and manifests |
-| provider URLs and calculation definitions | HyRiver/HTTP caches, virtual environments, Matplotlib caches |
+| Source code, tests, documentation, dependency lockfile, frontend scripts and MapLibre runtime | `data/` raw responses, Parquet observations, provider metadata and GeoJSON boundaries |
+| Calculation definitions and provider URLs | `outputs/` optional exported PNG/SVG charts and manifests |
+| Small synthetic test fixtures only | HTTP/HyRiver caches, virtual environments, Matplotlib caches |
 
-Each station package writes source manifests with retrieval time, source URL,
-date window, profile, and file-level checksums. Therefore another machine can
-rebuild the latest public snapshot from the same code and inspect exactly what
-was used for a local analysis. Rebuilding the latest snapshot is not expected
-to produce byte-identical observations if a provider revises its historical
-records; the manifest makes that change visible.
-
-For an exact frozen snapshot later, the intended extension is a versioned
-GitHub Release asset or public object-storage archive referenced by a manifest.
-Large raw data and generated figures do not belong in ordinary Git history.
+No station data, basin data, downloaded boundaries, cached API payloads, or
+generated visualizations are uploaded to this repository. Each local package
+records retrieval time, source URL, date window, profile, and file checksums so
+its locally derived analysis remains traceable.
 
 ## Project layout
 
 ```text
 src/station_hydro/
-  models.py              station and Available Data contracts
-  discovery.py           HyRiver discovery plus narrow USGS adapters
-  retrieval.py           daily, annual-peak, and optional continuous data
-  basin.py               contributing watershed and network retrieval
-  quality.py             non-destructive QA/QC summaries and flags
+  discovery.py           metadata and Available Data discovery
+  retrieval.py           daily and optional continuous retrieval
+  basin.py               watershed and network retrieval
+  quality.py             non-destructive QA/QC summaries
   hydrology.py           derived Water-Year and station statistics
-  plots.py               required figures and PNG preflight
-  service.py             application-facing station snapshot contract
-  webapp.py              REST API and static browser application
+  package_reader.py      local package-to-JSON data adapter
+  presentation.py        Overview and station-page view models
+  webapp.py              local REST API and static-file server
   cli.py                 command-line entry point
-web/                     no-build frontend served by the API
+web/
+  index.html, app.js     local Overview
+  station.html, station.js dynamic station experience
 tests/                   provider-independent unit and web-contract tests
 ```
 
 The implementation uses HyRiver where it provides a mature NWIS/NLDI seam and
-keeps narrow direct-USGS adapters only for provider catalog details that are not
-available through the high-level interface. No PDF or HTML report generator is
-part of this standalone project.
+uses narrow direct-USGS adapters only for provider catalog details outside that
+interface. There is no PDF or static HTML reporting workflow in the normal
+product path.

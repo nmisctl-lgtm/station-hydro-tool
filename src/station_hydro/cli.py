@@ -158,7 +158,10 @@ def _run_pipeline(args: argparse.Namespace, request: StationRequest) -> dict[str
     flow_network_path = None
     quality_path = write_station_quality(station_root, args.output_dir)
     hydrology_path = write_station_hydrology(station_root)
-    generate_station_figures(station_root, args.output_dir)
+    # The browser product renders all charts from the local data package.  PNG
+    # and SVG exports remain available through the explicit ``plot`` command,
+    # but a normal station run does not generate images that the app will not
+    # read.
     return {
         "station_root": station_root,
         "plan": plan_path,
@@ -171,7 +174,6 @@ def _run_pipeline(args: argparse.Namespace, request: StationRequest) -> dict[str
         "flow_network": flow_network_path,
         "quality": quality_path,
         "hydrology": hydrology_path,
-        "figures": output_station_root(args.output_dir, station_root) / "figures",
     }
 
 

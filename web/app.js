@@ -1,132 +1,175 @@
-const form = document.querySelector("#station-form");
-const stationInput = document.querySelector("#station-id");
-const refreshButton = document.querySelector("#refresh-button");
-const statusNode = document.querySelector("#status");
-const content = document.querySelector("#station-content");
+/* Dynamic local Overview: no station data or rendered figures are bundled. */
+import * as maplibregl from "/static/vendor/maplibre-gl.mjs";
 
-function stationIdFromPath() {
-  const match = window.location.pathname.match(/\/station\/USGS\/(\d+)/i);
-  return match ? match[1] : null;
-}
+const $ = (selector) => document.querySelector(selector);
+const state = { map: null, stations: [], features: { type: "FeatureCollection", features: [] } };
+const BASEMAPS = {
+  local: { tiles: null, note: "Local station coordinates only." },
+  topo: { tiles: ["https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}"], note: "Online optional USGS topographic basemap." },
+  imagery: { tiles: ["https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/MapServer/tile/{z}/{y}/{x}"], note: "Online optional USGS imagery and topographic basemap." },
+  terrain: { tiles: ["https://basemap.nationalmap.gov/arcgis/rest/services/USGSShadedReliefOnly/MapServer/tile/{z}/{y}/{x}"], note: "Online optional USGS shaded-relief basemap." },
+};
 
-function setStatus(message, kind = "") {
-  statusNode.textContent = message;
-  statusNode.className = `status ${kind}`;
+async function api(path, options) {
+  const response = await fetch(path, { cache: "no-store", ...options });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.detail || payload.error?.message || `Request failed (${response.status})`);
+  return payload.data ?? payload;
 }
 
 function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+  return String(value ?? "—").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
 }
 
-function formatNumber(value, digits = 2) {
-  if (value === null || value === undefined || value === "") return "—";
-  const number = Number(value);
-  return Number.isFinite(number) ? number.toLocaleString(undefined, { maximumFractionDigits: digits }) : escapeHtml(value);
+function prettyName(value) {
+  const raw = String(value || "").trim();
+  if (!raw || raw !== raw.toUpperCase()) return raw || "—";
+  return raw.toLowerCase().replace(/\b\w/g, (match) => match.toUpperCase()).replace(/\b(Nr|At|Of|The|And|On|To|In)\b/g, (match) => match.toLowerCase()).replace(/\bUsgs\b/g, "USGS").replace(/\bCo\b/g, "CO");
 }
 
-function renderSummary(snapshot) {
-  const station = snapshot.station;
-  const available = snapshot.available_data || [];
-  const core = available.filter((item) => item.analysis_role === "core").length;
-  const downloaded = available.filter((item) => item.local_status === "downloaded" || item.downloaded).length;
-  const firstCoverage = snapshot.coverage?.[0] || {};
-
-  document.querySelector("#station-heading").innerHTML = `
-    <p class="eyebrow">USGS ${escapeHtml(station.station_id)}</p>
-    <h2>${escapeHtml(station.name || "Unnamed station")}</h2>
-    <p class="muted">${escapeHtml(station.source_url || "")}</p>`;
-
-  document.querySelector("#summary-cards").innerHTML = [
-    ["Coordinates", `${formatNumber(station.latitude, 5)}, ${formatNumber(station.longitude, 5)}`],
-    ["Drainage area", `${formatNumber(station.drainage_area_sq_mi, 1)} mi²`],
-    ["Inventory series", `${formatNumber(available.length, 0)} (${core} core)`],
-    ["Downloaded series", `${formatNumber(downloaded, 0)}`],
-    ["Latest declared date", firstCoverage.declared_end || station.retrieved_at || "—"],
-  ].map(([label, value]) => `<div class="card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
-
-  const locationFields = [
-    ["Station ID", station.station_id],
-    ["Site type", station.site_type || station.site_type_code],
-    ["HUC", station.huc_code],
-    ["County code", station.county_code],
-    ["Elevation", `${formatNumber(station.elevation_ft, 1)} ft ${station.elevation_datum || ""}`],
-    ["Coordinate datum", station.coordinate_datum],
-    ["Timezone", station.timezone],
-    ["Retrieved", station.retrieved_at],
-  ];
-  document.querySelector("#location-details").innerHTML = locationFields.map(([label, value]) =>
-    `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || "—")}</dd></div>`).join("");
-
-  const files = snapshot.observations || [];
-  const basin = snapshot.spatial?.contributing_watershed || {};
-  document.querySelector("#observation-files").innerHTML = `
-    <h3>Local observation files</h3>
-    ${files.length ? `<ul>${files.map((file) => `<li>${escapeHtml(file.name)} <span class="muted">(${formatNumber(file.bytes, 0)} bytes)</span></li>`).join("")}</ul>` : `<p class="muted">No local observation files yet.</p>`}
-  `;
-  document.querySelector("#basin-details").innerHTML = `
-    <h3>Contributing watershed</h3>
-    <p>${basin.available ? `<a href="${basin.url}" target="_blank" rel="noreferrer">Open GeoJSON boundary</a>` : "Not downloaded yet."}</p>
-  `;
-
-  const columns = ["variable", "frequency", "parameter_code", "unit", "declared_start", "declared_end", "local_status"];
-  document.querySelector("#availability-table").innerHTML = `
-    <thead><tr>${columns.map((column) => `<th>${escapeHtml(column.replaceAll("_", " "))}</th>`).join("")}</tr></thead>
-    <tbody>${available.map((item) => `<tr>${columns.map((column) => `<td>${escapeHtml(item[column] ?? "—")}</td>`).join("")}</tr>`).join("")}</tbody>
-  `;
-
-  const figures = snapshot.figures || {};
-  document.querySelector("#figures").innerHTML = Object.entries(figures).map(([key, urls]) => {
-    const title = key.replaceAll("_", " ");
-    const image = urls.png || urls.svg;
-    return `<figure><a href="${image}" target="_blank" rel="noreferrer"><img loading="lazy" src="${urls.png || urls.svg}" alt="${escapeHtml(title)}"></a><figcaption>${escapeHtml(title)}</figcaption></figure>`;
-  }).join("") || `<p class="muted">No generated figures yet.</p>`;
+function currentFilters() {
+  return {
+    source: $("#filter-source").value,
+    coordinate: $("#filter-coordinate").value,
+    search: $("#filter-search").value.trim().toLowerCase(),
+  };
 }
 
-async function loadStation({ run = true, refresh = false } = {}) {
-  const stationId = stationInput.value.trim();
-  if (!stationId) return;
-  setStatus(run ? "Discovering metadata and building the station package…" : "Reading local station package…");
-  refreshButton.disabled = true;
+function visibleStations() {
+  const filters = currentFilters();
+  return state.stations.filter((station) => {
+    const matchesText = !filters.search || [station.location_key, station.provider_station_id, station.display_name]
+      .some((value) => String(value || "").toLowerCase().includes(filters.search));
+    return (!filters.source || station.source_name === filters.source)
+      && (!filters.coordinate || station.coordinate_status === filters.coordinate)
+      && matchesText;
+  });
+}
+
+function renderMetrics(overview) {
+  $("#metric-stations").textContent = Number(overview.registered_location_count || 0).toLocaleString();
+  $("#metric-mapped").textContent = Number(overview.mapped_location_count || 0).toLocaleString();
+  $("#metric-coordinate-review").textContent = Number(overview.coordinate_review_count || 0).toLocaleString();
+  $("#metric-daily").textContent = "local only";
+  $("#release-line").textContent = overview.registered_location_count
+    ? `${overview.registered_location_count} locally cached station${overview.registered_location_count === 1 ? "" : "s"} · live public-data workflow`
+    : "No station package is cached yet · enter a USGS ID to begin";
+}
+
+function openStation(locationKey) {
+  const stationId = locationKey.split(":").at(-1);
+  window.location.assign(`/station/USGS/${encodeURIComponent(stationId)}?station=${encodeURIComponent(locationKey)}`);
+}
+
+function renderRows() {
+  const stations = visibleStations();
+  $("#station-rows").innerHTML = stations.map((station) => `<tr tabindex="0" data-station-key="${escapeHtml(station.location_key)}"><td><span class="station-name">${escapeHtml(prettyName(station.display_name))}</span><span class="station-key">${escapeHtml(station.location_key)}</span></td><td>${escapeHtml(station.source_name)}</td><td>stream gage</td><td><span class="profile-chip">local package</span><span class="station-key">${escapeHtml(station.activity_status)}</span></td><td><span class="status-dot ${station.coordinate_status === "valid" ? "coordinate-valid" : "coordinate-review"}"></span>${station.coordinate_status === "valid" ? "Mapped" : "Needs review"}</td></tr>`).join("") || '<tr><td colspan="5" class="muted">No matching local station package. Enter a USGS station ID above to create one.</td></tr>';
+  for (const row of document.querySelectorAll("#station-rows [data-station-key]")) {
+    const open = () => openStation(row.dataset.stationKey);
+    row.addEventListener("click", open);
+    row.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } });
+  }
+  $("#filter-result").textContent = `${stations.length.toLocaleString()} locally cached station${stations.length === 1 ? "" : "s"} shown`;
+}
+
+function visibleFeatures() {
+  const allowed = new Set(visibleStations().map((station) => station.location_key));
+  return { type: "FeatureCollection", features: state.features.features.filter((feature) => allowed.has(feature.properties?.location_key)) };
+}
+
+function updateMap() {
+  const features = visibleFeatures();
+  if (!state.map || !state.map.isStyleLoaded()) return;
+  state.map.getSource("stations")?.setData(features);
+  if (features.features.length === 1) state.map.flyTo({ center: features.features[0].geometry.coordinates, zoom: 9 });
+}
+
+function setBasemap(value) {
+  const choice = BASEMAPS[value] || BASEMAPS.local;
+  const source = state.map?.getSource("optional-usgs-basemap");
+  if (source && choice.tiles) source.setTiles(choice.tiles);
+  if (state.map?.getLayer("optional-usgs-basemap")) state.map.setLayoutProperty("optional-usgs-basemap", "visibility", choice.tiles ? "visible" : "none");
+  $("#map-basemap-note").textContent = choice.note;
+}
+
+function initMap() {
+  const map = new maplibregl.Map({
+    container: "map",
+    style: { version: 8, sources: {}, layers: [{ id: "background", type: "background", paint: { "background-color": "#e8f1ee" } }] },
+    center: [-107.8, 36.9], zoom: 6.3, attributionControl: true,
+  });
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+  map.addControl(new maplibregl.ScaleControl({ maxWidth: 120, unit: "imperial" }), "bottom-left");
+  map.on("load", () => {
+    map.addSource("optional-usgs-basemap", { type: "raster", tiles: BASEMAPS.terrain.tiles, tileSize: 256, attribution: "USGS The National Map" });
+    map.addLayer({ id: "optional-usgs-basemap", type: "raster", source: "optional-usgs-basemap", paint: { "raster-opacity": 0.62 } });
+    map.addSource("stations", { type: "geojson", data: state.features });
+    map.addLayer({ id: "station-points", type: "circle", source: "stations", paint: { "circle-radius": 6, "circle-color": "#176c88", "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.3 } });
+    map.on("click", "station-points", (event) => { const key = event.features?.[0]?.properties?.location_key; if (key) openStation(key); });
+    map.on("mouseenter", "station-points", () => { map.getCanvas().style.cursor = "pointer"; });
+    map.on("mouseleave", "station-points", () => { map.getCanvas().style.cursor = ""; });
+    $("#map-mode").textContent = "Local dynamic map";
+    updateMap();
+  });
+  state.map = map;
+}
+
+async function refreshOverview() {
+  const [overview, stations, features] = await Promise.all([
+    api("/api/v1/overview"),
+    api("/api/v1/stations?limit=5000"),
+    api("/api/v1/map/stations"),
+  ]);
+  state.stations = stations;
+  state.features = features;
+  const source = $("#filter-source");
+  const selected = source.value;
+  const sources = [...new Set(stations.map((station) => station.source_name).filter(Boolean))].sort();
+  source.replaceChildren(new Option("All sources", ""), ...sources.map((item) => new Option(item, item)));
+  source.value = sources.includes(selected) ? selected : "";
+  renderMetrics(overview);
+  renderRows();
+  updateMap();
+  $("#archive-status-rows").innerHTML = '<tr><td colspan="7" class="muted">No data release is bundled. Source status is retained inside each locally created station package.</td></tr>';
+  $("#update-run-note").textContent = "Station retrieval and analysis occur only when you request a station.";
+  $("#health-matrix-rows").innerHTML = '<tr><td class="muted">Open a station to inspect its coverage and QA/QC dynamically.</td></tr>';
+}
+
+function normalizedStationId(value) {
+  const match = String(value || "").trim().match(/(?:USGS[-:\s]*)?(\d{8,15})$/i);
+  return match?.[1] || null;
+}
+
+async function openRequestedStation(event) {
+  event.preventDefault();
+  const stationId = normalizedStationId($("#station-id").value);
+  if (!stationId) { $("#station-open-status").textContent = "Enter a valid numeric USGS station ID."; return; }
+  const withContinuous = $("#with-continuous").checked;
+  $("#station-open-status").textContent = "Downloading public USGS data and building the local station package…";
+  const button = $("#station-open-form button");
+  button.disabled = true;
   try {
-    const endpoint = run
-      ? `/api/v1/stations/${encodeURIComponent(stationId)}/run?refresh=${refresh}&with_continuous=true`
-      : `/api/v1/stations/${encodeURIComponent(stationId)}`;
-    let response = await fetch(endpoint, { method: run ? "POST" : "GET" });
-    if (!response.ok && !run && response.status === 404) {
-      setStatus("No local package found; building it from public USGS data…");
-      response = await fetch(
-        `/api/v1/stations/${encodeURIComponent(stationId)}/run?refresh=false&with_continuous=true`,
-        { method: "POST" },
-      );
-    }
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.detail || "Station request failed");
-    renderSummary(payload);
-    content.hidden = false;
-    window.history.replaceState({}, "", `/station/USGS/${stationId}`);
-    setStatus("Station package ready.", "ok");
+    await api(`/api/v1/stations/${encodeURIComponent(stationId)}/run?refresh=false&with_continuous=${withContinuous}`, { method: "POST" });
+    openStation(`USGS:${stationId}`);
   } catch (error) {
-    content.hidden = true;
-    setStatus(error.message, "error");
+    $("#station-open-status").textContent = error.message;
   } finally {
-    refreshButton.disabled = false;
+    button.disabled = false;
   }
 }
 
-form.addEventListener("submit", (event) => {
-  event.preventDefault();
-  loadStation({ run: true, refresh: false });
-});
-
-refreshButton.addEventListener("click", () => loadStation({ run: true, refresh: true }));
-
-const initialStation = stationIdFromPath();
-if (initialStation) {
-  stationInput.value = initialStation;
-  loadStation({ run: false });
+function bindControls() {
+  $("#station-open-form").addEventListener("submit", openRequestedStation);
+  for (const element of [$("#filter-source"), $("#filter-coordinate")]) element.addEventListener("change", () => { renderRows(); updateMap(); });
+  $("#filter-search").addEventListener("input", () => { renderRows(); updateMap(); });
+  $("#filter-reset").addEventListener("click", () => { $("#filter-source").value = ""; $("#filter-coordinate").value = ""; $("#filter-search").value = ""; renderRows(); updateMap(); });
+  $("#map-basemap").addEventListener("change", (event) => setBasemap(event.target.value));
+  $("#basemap-opacity").addEventListener("input", (event) => { if (state.map?.getLayer("optional-usgs-basemap")) state.map.setPaintProperty("optional-usgs-basemap", "raster-opacity", Number(event.target.value)); $("#basemap-opacity-value").textContent = `${Math.round(Number(event.target.value) * 100)}%`; });
+  for (const button of document.querySelectorAll("[data-panel-toggle]")) button.addEventListener("click", () => { const panel = document.getElementById(button.dataset.panelToggle); if (!panel) return; const collapsed = panel.classList.toggle("panel-collapsed"); button.setAttribute("aria-expanded", String(!collapsed)); button.classList.toggle("active", !collapsed); });
 }
+
+window.addEventListener("DOMContentLoaded", async () => {
+  bindControls();
+  initMap();
+  try { await refreshOverview(); } catch (error) { $("#release-line").textContent = `Could not read the local station cache: ${error.message}`; $("#map-mode").textContent = "Unavailable"; }
+});

@@ -3,57 +3,82 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Station Hydro Tool</title>
-    <link rel="stylesheet" href="/static/app.css" />
+    <title>San Juan Station Explorer</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/vendor/maplibre-gl.css" />
+    <script type="module" src="/static/app.js"></script>
   </head>
   <body>
-    <main class="shell">
-      <header class="hero">
-        <p class="eyebrow">Station Hydro Tool · Phase 1</p>
-        <h1>Explore one monitoring station</h1>
-        <p class="lede">
-          Enter a USGS station ID to discover its metadata, available data,
-          coverage, watershed boundary, quality summary, and figures.
-        </p>
-        <form id="station-form" class="station-form">
-          <label for="station-id">USGS station ID</label>
-          <div class="form-row">
-            <input id="station-id" name="station-id" value="09342500" inputmode="numeric" required />
-            <button type="submit">Load station</button>
-            <button type="button" id="refresh-button" class="secondary">Refresh data</button>
-          </div>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">LOCAL · DYNAMIC · NO BUNDLED DATA</p>
+        <h1>San Juan Basin Overview</h1>
+        <p id="release-line" class="muted">Opening the local station workspace…</p>
+        <form id="station-open-form" class="station-open-form">
+          <label>USGS station ID <input id="station-id" name="station-id" inputmode="numeric" placeholder="09342500" required /></label>
+          <label class="toggle-label"><input id="with-continuous" type="checkbox" checked /> Download continuous stage and flow</label>
+          <button type="submit">Open station</button>
         </form>
-        <p id="status" class="status" role="status"></p>
-      </header>
+        <p id="station-open-status" class="muted" role="status">Enter a USGS station ID to download its public data locally and open the analysis page.</p>
+      </div>
+      <div class="header-note">The repository contains code only. Station data stay in the local cache and charts render in this browser.</div>
+    </header>
 
-      <section id="station-content" hidden>
-        <div id="station-heading" class="station-heading"></div>
-        <section id="summary-cards" class="cards"></section>
+    <main>
+      <section aria-label="Basin overview" class="metric-grid">
+        <article><span>Registered locations</span><strong id="metric-stations">—</strong></article>
+        <article><span>Mapped locations</span><strong id="metric-mapped">—</strong></article>
+        <article><span>Coordinate review</span><strong id="metric-coordinate-review">—</strong></article>
+        <article><span>Daily observations</span><strong id="metric-daily">—</strong></article>
+      </section>
 
-        <div class="two-column">
-          <section class="panel">
-            <h2>Location details</h2>
-            <div id="location-details" class="detail-grid"></div>
-          </section>
-          <section class="panel">
-            <h2>Data files and watershed</h2>
-            <div id="observation-files"></div>
-            <div id="basin-details"></div>
-          </section>
-        </div>
+      <nav class="console-menu" aria-label="Console panels">
+        <button type="button" data-panel-toggle="filter-drawer" aria-expanded="false">Filters</button>
+        <button type="button" data-panel-toggle="station-register-drawer" aria-expanded="false">Station register</button>
+        <button type="button" data-panel-toggle="evidence-drawer" aria-expanded="false">Archive &amp; health evidence</button>
+      </nav>
 
-        <section class="panel">
-          <h2>Available data and coverage</h2>
-          <p class="muted">The inventory is provider-declared. Download status is shown when a local package exists.</p>
-          <div class="table-wrap"><table id="availability-table"></table></div>
+      <section class="workspace" aria-label="Basin station workspace">
+        <aside class="filter-panel panel-collapsed" id="filter-drawer">
+          <h2>Station filters</h2>
+          <label>Source <select id="filter-source"><option value="">All sources</option></select></label>
+          <label>Site location <select id="filter-coordinate"><option value="">All site-location states</option><option value="valid">Mapped</option><option value="review">Needs review</option></select></label>
+          <label>Search <input id="filter-search" type="search" placeholder="Name, location key, or ID" /></label>
+          <label class="toggle-label"><input id="show-inactive" type="checkbox" /> Include historical/inactive hydro stations</label>
+          <label class="toggle-label"><input id="show-non-hydro" type="checkbox" /> Include stations without stage/flow</label>
+          <button id="filter-reset" type="button">Clear filters</button>
+          <p id="filter-result" class="muted"></p>
+          <hr />
+          <h3>Facet legend</h3>
+          <p><span class="status-dot coordinate-valid"></span> mapped site location</p>
+          <p><span class="status-dot coordinate-review"></span> site location needs review</p>
+          <p class="small muted">Default register/map: active stations with numeric stage or flow. Historical stations and stations without stage/flow can be added from the switches above.</p>
+          <p class="small muted">“Historical” is provider metadata when available; otherwise it means the latest retained observation is older than 90 days. A non-hydrologic historical station may contain discrete water-quality or sediment records without a stage/flow series.</p>
+          <p class="small muted">Facets are evidence summaries, not a composite “health score.”</p>
+        </aside>
+
+        <section class="map-panel" aria-label="Interactive station map">
+          <div class="panel-heading"><div><h2>Local station map</h2><p>Only stations created on this computer are shown. Select a station to open its interactive analysis page.</p></div><span id="map-mode" class="pill">Opening map</span></div>
+          <div class="map-controls" aria-label="Map controls">
+            <label>Basemap <select id="map-basemap"><option value="terrain" selected>USGS shaded relief</option><option value="topo">USGS topographic</option><option value="local">Local hydrography only</option><option value="imagery">USGS satellite + topo</option></select></label>
+            <label class="opacity-control">Relief opacity <input id="basemap-opacity" type="range" min="0" max="1" value="0.62" step="0.05" /><output id="basemap-opacity-value">62%</output></label>
+          </div>
+          <p id="map-basemap-note" class="map-note">Online optional relief basemap; station coordinates come from each locally created package.</p>
+          <p id="hydrography-note" class="map-note">The repository does not include a basin release or precomputed hydrography.</p>
+          <div class="map-legend" aria-label="Station map legend"><div><strong>Source</strong><span><i class="legend-dot usgs"></i> USGS</span></div><div><strong>Availability</strong><span>● Locally created station package</span></div></div>
+          <div id="map" role="application" aria-label="Interactive San Juan Basin station map"></div>
         </section>
 
-        <section class="panel">
-          <h2>Analysis figures</h2>
-          <div id="figures" class="figure-grid"></div>
+        <section class="station-panel panel-collapsed" id="station-register-drawer" aria-label="Station register">
+          <div class="panel-heading"><div><h2>Station register</h2><p>Select a row to open complete metadata, QA/coverage summaries, and a time-windowed hydrograph.</p></div></div>
+          <div class="table-scroll"><table><thead><tr><th>Station</th><th>Source</th><th>Type</th><th>Data profile</th><th>Location status</th></tr></thead><tbody id="station-rows"></tbody></table></div>
         </section>
       </section>
+
+      <section class="quality-overview-grid panel-collapsed" aria-label="Quality and archive overview" id="evidence-drawer">
+        <article class="analysis-card"><div class="analysis-heading"><div><h2>Archive and update evidence</h2><p>Latest source timestamps are separate from the release build. “Locations with records” includes any retained variable; it is not the active/inactive decision. Failure count means auditable HTTP error evidence only, not an inferred outage count.</p></div></div><div class="table-scroll compact-table"><table><thead><tr><th>Source</th><th>Stations</th><th>Locations with records</th><th>Latest observed</th><th>Latest retrieved / age</th><th>Failed evidence</th><th>Latest artifact</th></tr></thead><tbody id="archive-status-rows"></tbody></table></div><p id="update-run-note" class="map-note"></p></article>
+        <article class="analysis-card"><div class="analysis-heading"><div><h2>Station–variable monthly health matrix</h2><p>Latest 12 calendar months with retained daily records. Filled cells are observed record presence, not assumed completeness; amber cells have additive QA candidate events.</p></div></div><div class="table-scroll health-matrix"><table><thead id="health-matrix-head"></thead><tbody id="health-matrix-rows"></tbody></table></div><p id="health-matrix-note" class="map-note"></p></article>
+      </section>
     </main>
-    <script type="module" src="/static/app.js"></script>
   </body>
 </html>
