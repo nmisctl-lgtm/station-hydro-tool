@@ -5,10 +5,11 @@ USGS hydrologic station at a time. Enter a station ID such as `09342500` in the
 Overview, and the tool retrieves public data to the computer on which it is
 running, then opens an interactive station page.
 
-The Overview is a local catalog: it maps the stations created on that computer.
-It is deliberately not a bundled San Juan data release. This keeps the GitHub
-repository small, reproducible, and free of station observations, watershed
-boundaries, cached API responses, and generated charts.
+The Overview can run in either mode: it maps only the station packages created
+on that computer, or it reads a local basin Overview display release when one
+has been transferred into `data/overview/`. The latter supplies the basin
+station register, GIS layers, and release evidence; it does not load the
+parent project's large analytical SQLite database.
 
 ## Quick start on a clean machine
 
@@ -26,7 +27,19 @@ uv run station-hydro serve
 Open <http://127.0.0.1:8765/>, enter a USGS station ID, and select **Open
 station**. The first request downloads that station's public metadata and
 observations into the local `data/` directory. Subsequent visits use the local
-package; `--refresh` requests a new provider snapshot.
+package. Opening a station checks and refreshes its daily USGS data at most
+once per 24 hours; the result is recorded in that package's
+`metadata/daily_update_state.json`. `--refresh` requests a new provider
+snapshot from the command line.
+
+If a local transfer bundle includes a basin Overview, extract it at the project
+root. The server automatically selects the newest directory under
+`data/overview/`; it can also be selected explicitly:
+
+```bash
+uv run station-hydro serve \
+  --overview-dir data/overview/basin-overview-20260827-huc4-1408
+```
 
 For a terminal-only workflow:
 
@@ -66,6 +79,8 @@ GET  /station/USGS/{station_id}         dynamic station page
 GET  /api/v1/overview                   local catalog summary
 GET  /api/v1/stations                   locally cached station register
 GET  /api/v1/map/stations               local station GeoJSON
+GET  /api/v1/meta/release               local Overview release metadata
+GET  /api/v1/context/overview            local basin GIS context index
 GET  /api/v1/stations/{location_key}/analysis
 GET  /api/v1/stations/{location_key}/hydrology
 GET  /api/v1/stations/{location_key}/local-daily
@@ -114,7 +129,8 @@ src/station_hydro/
   quality.py             non-destructive QA/QC summaries
   hydrology.py           derived Water-Year and station statistics
   package_reader.py      local package-to-JSON data adapter
-  presentation.py        Overview and station-page view models
+  basin_overview.py       read-only adapter for the Overview display release
+  presentation.py         Overview and station-page view models
   webapp.py              local REST API and static-file server
   cli.py                 command-line entry point
 web/

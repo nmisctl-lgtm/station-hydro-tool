@@ -4,14 +4,19 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import json
+import threading
+from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import parse_qs
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .models import StationRequest
+from .basin_overview import BasinOverviewError, BasinOverviewReader
 from .package_reader import (
     StationPackageError,
     StationPackageNotFound,
@@ -50,6 +55,7 @@ def create_app(
     *,
     data_dir: Path = Path("data/stations"),
     output_dir: Path = Path("outputs"),
+    overview_dir: Path | None = None,
 ) -> FastAPI:
     """Create the standalone station API and browser application."""
 
@@ -70,6 +76,24 @@ def create_app(
     )
     app.mount("/static", StaticFiles(directory=WEB_ROOT), name="static")
     package_reader = StationPackageReader(data_dir)
+    if overview_dir is None:
+        overview_root = data_dir.parent / "overview"
+        candidates = sorted(
+            path
+            for path in overview_root.glob("*")
+            if path.is_dir() and (path / "console" / "overview.json").is_file()
+        ) if overview_root.is_dir() else []
+        overview_dir = candidates[-1] if candidates else None
+    try:
+        overview_reader = (
+            BasinOverviewReader.open(overview_dir, data_dir)
+            if overview_dir is not None
+            else None
+        )
+    except BasinOverviewError as exc:
+        raise ValueError(str(exc)) from exc
+    update_locks: dict[str, threading.Lock] = {}
+    update_locks_guard = threading.Lock()
 
     def package_data(callback: Any) -> dict[str, Any]:
         try:
@@ -82,6 +106,92 @@ def create_app(
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
         return FileResponse(WEB_ROOT / "index.html")
+
+    def overview_parameters(request: Request) -> dict[str, list[str]]:
+        return parse_qs(request.url.query, keep_blank_values=True)
+
+    def cached_station_has_inventory(location_key: str) -> bool:
+        try:
+            request = StationRequest(location_key.split(":", maxsplit=1)[-1])
+            root = resolve_station_root(data_dir, request)
+        except (ValueError, RuntimeError):
+            return False
+        metadata_path = root / "metadata" / "station_metadata.json"
+        if not metadata_path.is_file():
+            return False
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        return bool(metadata.get("available_data"))
+
+    def ensure_daily_update(location_key: str) -> None:
+        """Check the daily source once per day when a station is viewed.
+
+        The page remains usable with its last local snapshot if a provider is
+        unavailable.  A small marker makes the refresh auditable and prevents
+        the station page's several API calls from starting duplicate downloads.
+        """
+
+        if not location_key.startswith("USGS:"):
+            return
+        if not cached_station_has_inventory(location_key):
+            return
+        station_id = location_key.split(":", maxsplit=1)[1]
+        try:
+            request = StationRequest(station_id)
+            root = resolve_station_root(data_dir, request)
+        except (ValueError, RuntimeError):
+            return
+        marker_path = root / "metadata" / "daily_update_state.json"
+        now = datetime.now(timezone.utc)
+        try:
+            marker = json.loads(marker_path.read_text(encoding="utf-8")) if marker_path.is_file() else {}
+            checked_at = datetime.fromisoformat(str(marker.get("checked_at_utc", "")).replace("Z", "+00:00"))
+            if checked_at.tzinfo is None:
+                checked_at = checked_at.replace(tzinfo=timezone.utc)
+            if marker.get("status") == "updated" and (now - checked_at).total_seconds() < 24 * 60 * 60:
+                return
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            pass
+        with update_locks_guard:
+            lock = update_locks.setdefault(location_key, threading.Lock())
+        with lock:
+            try:
+                marker = json.loads(marker_path.read_text(encoding="utf-8")) if marker_path.is_file() else {}
+                checked_at = datetime.fromisoformat(str(marker.get("checked_at_utc", "")).replace("Z", "+00:00"))
+                if checked_at.tzinfo is None:
+                    checked_at = checked_at.replace(tzinfo=timezone.utc)
+                if marker.get("status") == "updated" and (now - checked_at).total_seconds() < 24 * 60 * 60:
+                    return
+            except (OSError, TypeError, ValueError, json.JSONDecodeError):
+                pass
+            state: dict[str, Any] = {
+                "station_id": station_id,
+                "checked_at_utc": now.isoformat().replace("+00:00", "Z"),
+                "source": "USGS daily values",
+                "status": "updated",
+            }
+            try:
+                result = run_station(
+                    StationRunOptions(
+                        station_id=station_id,
+                        data_dir=data_dir,
+                        output_dir=output_dir,
+                        refresh=True,
+                        with_continuous=False,
+                    )
+                )
+                daily_path = result.get("daily")
+                state["daily_path"] = str(daily_path) if daily_path else None
+            except Exception as exc:  # pragma: no cover - provider-specific failure
+                state["status"] = "error"
+                state["error"] = str(exc)
+            try:
+                marker_path.parent.mkdir(parents=True, exist_ok=True)
+                marker_path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+            except OSError:
+                pass
 
     @app.get("/station/{provider}/{station_id}", include_in_schema=False)
     def station_page(provider: str, station_id: str) -> FileResponse:
@@ -97,22 +207,94 @@ def create_app(
     def health() -> dict[str, str]:
         return {"status": "ok", "service": "station-hydro-tool"}
 
-    @app.get("/api/v1/stations")
-    def stations(limit: int = Query(500, ge=1, le=5000)) -> dict[str, list[dict[str, Any]]]:
-        """List local packages; a fresh clone intentionally returns an empty list."""
+    @app.get("/api/v1/meta/release")
+    def release_metadata() -> dict[str, Any]:
+        if overview_reader is None:
+            return {"data": {"release_id": "local-dynamic-cache", "display_only": True}}
+        return overview_reader.envelope(overview_reader.release_metadata())
 
-        return {"data": list_cached_stations(data_dir)[:limit]}
+    @app.get("/api/v1/context/overview")
+    def context_overview() -> dict[str, Any]:
+        if overview_reader is None:
+            return {"data": {"available": False, "manifest": {}, "paths": {}}}
+        return overview_reader.envelope(overview_reader.context_overview())
+
+    @app.get("/api/v1/stations")
+    def stations(request: Request, limit: int = Query(500, ge=1, le=5000)) -> dict[str, Any]:
+        """List release stations when present, otherwise local station packages."""
+
+        if overview_reader is None:
+            return {"data": list_cached_stations(data_dir)[:limit]}
+        parameters = overview_parameters(request)
+        parameters["limit"] = [str(limit)]
+        return overview_reader.envelope(overview_reader.stations(parameters))
 
     @app.get("/api/v1/map/stations")
-    def station_map() -> dict[str, Any]:
-        return {"data": cached_station_feature_collection(data_dir)}
+    def station_map(request: Request) -> dict[str, Any]:
+        if overview_reader is None:
+            return {"data": cached_station_feature_collection(data_dir)}
+        return overview_reader.envelope(overview_reader.map_stations(overview_parameters(request)))
 
     @app.get("/api/v1/overview")
-    def overview() -> dict[str, Any]:
-        return {"data": cached_overview(data_dir)}
+    def overview(request: Request) -> dict[str, Any]:
+        if overview_reader is None:
+            return {"data": cached_overview(data_dir)}
+        return overview_reader.envelope(overview_reader.overview_data(overview_parameters(request)))
+
+    @app.get("/api/v1/operations/runs")
+    def operation_runs() -> dict[str, Any]:
+        if overview_reader is None:
+            return {"data": []}
+        return overview_reader.envelope(overview_reader.update_runs_data())
+
+    @app.get("/api/v1/operations/source-status")
+    def source_status() -> dict[str, Any]:
+        if overview_reader is None:
+            return {"data": []}
+        return overview_reader.envelope(overview_reader.source_archive_status())
+
+    @app.get("/api/v1/qa/matrix")
+    def quality_matrix(request: Request) -> dict[str, Any]:
+        if overview_reader is None:
+            return {"data": {"months": [], "rows": [], "interpretation": "No Overview release is configured."}}
+        return overview_reader.envelope(overview_reader.quality_matrix(overview_parameters(request)))
+
+    @app.get("/api/v1/qa/series")
+    def quality_series(request: Request) -> dict[str, Any]:
+        if overview_reader is None:
+            return {"data": []}
+        return overview_reader.envelope(overview_reader.qa_series(overview_parameters(request)))
+
+    @app.get("/api/v1/provenance/artifacts/{artifact_id}")
+    def source_artifact(artifact_id: str) -> dict[str, Any]:
+        if overview_reader is None:
+            raise HTTPException(status_code=404, detail="No Overview release is configured")
+        try:
+            return overview_reader.envelope(overview_reader.source_artifact(artifact_id))
+        except BasinOverviewError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/gis/{requested_path:path}", include_in_schema=False)
+    def gis_file(requested_path: str) -> FileResponse:
+        if overview_reader is None:
+            raise HTTPException(status_code=404, detail="No Overview release is configured")
+        root = (overview_reader.release_path / "gis").resolve()
+        candidate = (root / requested_path).resolve()
+        if root not in candidate.parents or not candidate.is_file():
+            raise HTTPException(status_code=404, detail="GIS file is not part of the local Overview release")
+        return FileResponse(candidate)
+
+    @app.get("/context/{requested_path:path}", include_in_schema=False)
+    def context_file(requested_path: str) -> FileResponse:
+        root = (data_dir / "_context").resolve()
+        candidate = (root / requested_path).resolve()
+        if root not in candidate.parents or not candidate.is_file():
+            raise HTTPException(status_code=404, detail="Context file is not part of the local station data")
+        return FileResponse(candidate)
 
     @app.get("/api/v1/stations/{location_key}/analysis")
     def station_analysis(location_key: str) -> dict[str, Any]:
+        ensure_daily_update(location_key)
         try:
             return {
                 "data": local_station_analysis(

@@ -104,7 +104,12 @@ function frequencyLabel(value) {
   return labels[frequencyKey(value)] || text(value);
 }
 function isWaterYearSeries(series) { return frequencyKey(series?.frequency) === "water_year"; }
-function stationParameter() { return new URLSearchParams(window.location.search).get("station"); }
+function stationParameter() {
+  const queryValue = new URLSearchParams(window.location.search).get("station");
+  if (queryValue) return queryValue;
+  const match = window.location.pathname.match(/^\/station\/([^/]+)\/([^/]+)\/?$/i);
+  return match ? match[1].toUpperCase() + ":" + decodeURIComponent(match[2]) : null;
+}
 function daysBefore(value, count) {
   const date = new Date(String(value) + "T00:00:00Z");
   date.setUTCDate(date.getUTCDate() - count);

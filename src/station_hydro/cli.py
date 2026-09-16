@@ -227,6 +227,12 @@ def build_parser() -> argparse.ArgumentParser:
     serve_parser.add_argument("--port", type=int, default=8765)
     serve_parser.add_argument("--data-dir", type=Path, default=Path("data/stations"))
     serve_parser.add_argument("--output-dir", type=Path, default=Path("outputs"))
+    serve_parser.add_argument(
+        "--overview-dir",
+        type=Path,
+        default=None,
+        help="local basin Overview display release (console/ and gis/)",
+    )
 
     return parser
 
@@ -257,7 +263,11 @@ def main(argv: list[str] | None = None) -> int:
         from .webapp import create_app
 
         uvicorn.run(
-            create_app(data_dir=args.data_dir, output_dir=args.output_dir),
+            create_app(
+                data_dir=args.data_dir,
+                output_dir=args.output_dir,
+                overview_dir=args.overview_dir,
+            ),
             host=args.host,
             port=args.port,
         )

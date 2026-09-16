@@ -12,6 +12,7 @@ build/
 # Local station data and generated artifacts
 data/
 outputs/
+.local_sync/
 
 # HyRiver and HTTP caches
 .cache/

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>San Juan Station Explorer</title>
+    <title>San Juan Basin Digital Twin</title>
     <link rel="stylesheet" href="/static/styles.css" />
     <link rel="stylesheet" href="/static/vendor/maplibre-gl.css" />
     <script type="module" src="/static/app.js"></script>
@@ -11,17 +11,11 @@
   <body>
     <header class="app-header">
       <div>
-        <p class="eyebrow">LOCAL · DYNAMIC · NO BUNDLED DATA</p>
-        <h1>San Juan Basin Overview</h1>
-        <p id="release-line" class="muted">Opening the local station workspace…</p>
-        <form id="station-open-form" class="station-open-form">
-          <label>USGS station ID <input id="station-id" name="station-id" inputmode="numeric" placeholder="09342500" required /></label>
-          <label class="toggle-label"><input id="with-continuous" type="checkbox" checked /> Download continuous stage and flow</label>
-          <button type="submit">Open station</button>
-        </form>
-        <p id="station-open-status" class="muted" role="status">Enter a USGS station ID to download its public data locally and open the analysis page.</p>
+        <p class="eyebrow">LOCAL · READ ONLY · DATA RELEASE</p>
+        <h1>San Juan Basin Digital Twin</h1>
+        <p id="release-line" class="muted">Opening Basin Overview Product…</p>
       </div>
-      <div class="header-note">The repository contains code only. Station data stay in the local cache and charts render in this browser.</div>
+      <div class="header-note">No 3-Gage or water-accounting result is shown in this release.</div>
     </header>
 
     <main>
@@ -58,14 +52,28 @@
         </aside>
 
         <section class="map-panel" aria-label="Interactive station map">
-          <div class="panel-heading"><div><h2>Local station map</h2><p>Only stations created on this computer are shown. Select a station to open its interactive analysis page.</p></div><span id="map-mode" class="pill">Opening map</span></div>
-          <div class="map-controls" aria-label="Map controls">
+          <div class="panel-heading"><div><h2>All-basin station map</h2><p>Stations, the basin boundary, and NHDPlus HR reference flowlines are local release files. Select a station to open its analysis in a new tab.</p></div><span id="map-mode" class="pill">Opening map</span></div>
+          <div class="map-controls" aria-label="Map layers">
             <label>Basemap <select id="map-basemap"><option value="terrain" selected>USGS shaded relief</option><option value="topo">USGS topographic</option><option value="local">Local hydrography only</option><option value="imagery">USGS satellite + topo</option></select></label>
             <label class="opacity-control">Relief opacity <input id="basemap-opacity" type="range" min="0" max="1" value="0.62" step="0.05" /><output id="basemap-opacity-value">62%</output></label>
+            <label><input id="toggle-flowlines" type="checkbox" checked disabled /> NHDPlus HR flowlines</label>
+            <label><input id="toggle-boundary" type="checkbox" checked disabled /> WBD basin boundary</label>
+            <label><input id="toggle-context-states" type="checkbox" checked disabled /> State boundaries</label>
+            <label><input id="toggle-context-rivers" type="checkbox" checked disabled /> Major rivers</label>
+            <label><input id="toggle-context-facilities" type="checkbox" checked disabled /> Major facilities</label>
+            <label><input id="toggle-coverage-bars" type="checkbox" /> Variable coverage bars</label>
+            <label class="file-input">Add local GeoJSON <input id="local-layer-file" type="file" accept=".geojson,.json,application/geo+json,application/json" /></label>
           </div>
-          <p id="map-basemap-note" class="map-note">Online optional relief basemap; station coordinates come from each locally created package.</p>
-          <p id="hydrography-note" class="map-note">The repository does not include a basin release or precomputed hydrography.</p>
-          <div class="map-legend" aria-label="Station map legend"><div><strong>Source</strong><span><i class="legend-dot usgs"></i> USGS</span></div><div><strong>Availability</strong><span>● Locally created station package</span></div></div>
+          <p id="map-basemap-note" class="map-note">Online optional relief basemap; local reference layers remain visible when tiles are unavailable.</p>
+          <p id="hydrography-note" class="map-note">Hydrography package is included when a release is built after the USGS reference download.</p>
+          <div class="map-legend" aria-label="Station map legend">
+            <div><strong>Source</strong><span><i class="legend-dot usgs"></i> USGS</span><span><i class="legend-dot nm"></i> NM MEAS</span><span><i class="legend-dot co"></i> CO DWR</span></div>
+            <div><strong>Variable profile</strong><span><i class="legend-ring stage"></i> Stage</span><span><i class="legend-ring discharge"></i> Discharge</span><span><i class="legend-ring both"></i> Stage + discharge</span><span><i class="legend-ring water-quality"></i> Water quality</span><span><i class="legend-ring sediment"></i> Sediment</span><span><i class="legend-ring other"></i> Other</span></div>
+            <div><strong>Station kind</strong><span>● River / stream</span><span>◆ Ditch / diversion</span></div>
+            <div><strong>Coverage bars</strong><span><i class="coverage-key stage"></i> Stage</span><span><i class="coverage-key discharge"></i> Discharge</span><span><i class="coverage-key water-quality"></i> Water quality</span><span><i class="coverage-key sediment"></i> Sediment</span><span><i class="coverage-key other"></i> Other</span></div>
+          </div>
+          <div id="local-layer-list" class="local-layer-list" aria-live="polite"></div>
+          <p id="local-layer-status" class="map-note"></p>
           <div id="map" role="application" aria-label="Interactive San Juan Basin station map"></div>
         </section>
 

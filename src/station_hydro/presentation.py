@@ -108,6 +108,121 @@ def cached_overview(data_dir: Path) -> dict[str, int | str]:
     }
 
 
+def local_quality_matrix(data_dir: Path, months_requested: int = 12) -> dict[str, Any]:
+    """Summarize monthly daily-record presence for locally cached USGS data.
+
+    This intentionally reports observed row presence, not inferred percentage
+    completeness.  It keeps the standalone Overview useful without reopening
+    the parent basin product's large analytical database.
+    """
+
+    try:
+        import pyarrow.parquet as parquet
+        import pandas as pd
+    except ImportError:  # pragma: no cover - dependency is part of the project
+        return {
+            "months": [],
+            "rows": [],
+            "interpretation": "PyArrow is unavailable; local daily presence could not be read.",
+        }
+
+    daily_paths = sorted(data_dir.rglob("observations/daily_discharge.parquet"))
+    if not daily_paths:
+        return {
+            "months": [],
+            "rows": [],
+            "interpretation": "No locally cached daily analytical records are available.",
+        }
+    metadata_by_station: dict[str, dict[str, Any]] = {}
+    for metadata_path in sorted(data_dir.rglob("metadata/station_metadata.json")):
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        station_id = str(metadata.get("station_id") or "").strip()
+        if station_id:
+            metadata_by_station[station_id] = metadata
+    try:
+        table = parquet.read_table(
+            daily_paths,
+            columns=["station_id", "series_id", "observed_date_local", "value"],
+        )
+    except (OSError, ValueError):
+        return {
+            "months": [],
+            "rows": [],
+            "interpretation": "The local daily packages could not be read.",
+        }
+    frame = table.to_pandas()
+    dates = pd.to_datetime(frame["observed_date_local"], errors="coerce")
+    frame = frame.loc[dates.notna()].copy()
+    if frame.empty:
+        return {
+            "months": [],
+            "rows": [],
+            "interpretation": "No locally cached daily analytical records are available.",
+        }
+    # Numeric YYYYMM grouping is materially faster than formatting a million
+    # timestamps as Python strings on first Overview load.
+    frame["month"] = dates.dt.year * 100 + dates.dt.month
+    frame["numeric_value"] = pd.to_numeric(frame["value"], errors="coerce")
+    latest = dates.loc[frame.index].max()
+    latest_month = (int(latest.year), int(latest.month))
+    observations: list[tuple[dict[str, Any], dict[str, dict[str, int]]]] = []
+    for (station_id, series_id), group in frame.groupby(["station_id", "series_id"], dropna=True):
+        station_id = str(station_id)
+        monthly_counts = group.groupby("month", sort=True).size()
+        numeric_counts = group["numeric_value"].notna().groupby(group["month"]).sum()
+        monthly = {
+            f"{int(month) // 100:04d}-{int(month) % 100:02d}": {
+                "daily_record_count": int(count),
+                "numeric_observation_count": int(numeric_counts.get(month, 0)),
+            }
+            for month, count in monthly_counts.items()
+        }
+        metadata = metadata_by_station.get(station_id, {})
+        observations.append(
+            (
+                {
+                    "series_key": str(series_id),
+                    "location_key": f"USGS:{station_id}",
+                    "source_name": "USGS",
+                    "source_variable": "00060",
+                    "variable_name": "Discharge",
+                    "unit_canonical": "ft3/s",
+                    "display_name": metadata.get("name") or f"USGS {station_id}",
+                    "candidate_event_count": 0,
+                },
+                monthly,
+            )
+        )
+
+    if latest_month is None:
+        return {
+            "months": [],
+            "rows": [],
+            "interpretation": "No locally cached daily analytical records are available.",
+        }
+    year, month = latest_month
+    months: list[str] = []
+    for _ in range(max(1, min(36, months_requested))):
+        months.append(f"{year:04d}-{month:02d}")
+        year, month = (year - 1, 12) if month == 1 else (year, month - 1)
+    months.reverse()
+    rows: list[dict[str, Any]] = []
+    for base, monthly in observations:
+        base["monthly"] = {month: monthly[month] for month in months if month in monthly}
+        rows.append(base)
+    return {
+        "months": months,
+        "rows": rows,
+        "interpretation": (
+            "A filled cell means at least one locally retained daily discharge row was read in that calendar month. "
+            "Blank cells are not an inferred outage or completeness verdict."
+        ),
+    }
+
+
 def _station_id_from_key(location_key: str) -> str:
     provider, separator, station_id = str(location_key).partition(":")
     if provider.upper() != "USGS" or not separator:
